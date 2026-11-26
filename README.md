@@ -13,6 +13,18 @@ Ein Aufbauspiel für Android-Tablets im Stil der alten Siedler-Klassiker – mit
 - Wachstube und Wachturm vergrößern das Land
 - Tipps für den Einstieg, automatisches Speichern
 
+## Version 2
+- Titelbild „Er kam, sah und vergaß …“
+- Nebel: sichtbar ist nur das eigene Land und ein Streifen dahinter
+- Ton: Arbeitsgeräusche, Vögel, Wind, Wasser, Hinweistöne, Lautstärkeregler
+- Eigene Bewegungen für jeden Beruf, fallende Bäume, Träger bücken sich, sitzen und kratzen sich am Kopf
+- Lager-Fenster (oben auf die Waren tippen)
+- Auslastung in % über jedem Haus
+- Kleine Übersichtskarte, Meldungen mit Sprung zur Stelle
+- Viel benutzte Wege werden gepflastert und bekommen einen zweiten Träger
+- Arbeit in Gebäuden anhalten
+- Statistik, drei Spielstände
+
 ## Geplant
 - Stufe 2: Nahrung, Bergbau, Geologen, Werkzeuge
 - Stufe 3: Militär und Computergegner

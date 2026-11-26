@@ -43,6 +43,10 @@ public class World implements Serializable {
     static final int C_GO = 20, C_IDLE = 21, C_FETCH = 22, C_CARRY = 23, C_DROPWAIT = 24, C_TOMID = 25;
 
     public static final int FLAG_CAP = 8;
+
+    // Ereignisse für Töne
+    public static final int E_CHOP = 1, E_CLINK = 2, E_DIG = 3, E_HAMMER = 4, E_SAW = 5, E_TREEFALL = 6, E_DONE = 7,
+            E_LAND = 8, E_DROP = 9, E_PAVE = 10;
     static final float BUILD_PER_MAT = 3f;
     static final float TREE_GROW = 35f;
 
@@ -66,6 +70,18 @@ public class World implements Serializable {
         public int id, a, b;
         public int[] path;
         public int carrier = -1;
+        /** 0 = Trampelpfad, 1 = gepflastert, 2 = gepflastert mit zweitem Träger */
+        public int level;
+        public float traffic;
+        /** Id des zweiten Trägers, 0 = keiner */
+        public int helper;
+    }
+
+    public static class Msg implements Serializable {
+        private static final long serialVersionUID = 1L;
+        public String text;
+        public int node;
+        public float time;
     }
 
     public static class Building implements Serializable {
@@ -78,6 +94,10 @@ public class World implements Serializable {
         public int builder = -1, worker = -1;
         public String status = "";
         public int produced;
+        public boolean stopped, problem;
+        /** Auslastung 0..1 (gleitender Mittelwert) */
+        public float util;
+        int noticed;
 
         public int totalCost() {
             int s = 0;
@@ -107,6 +127,13 @@ public class World implements Serializable {
         public boolean visible = true;
         int[] tripBack;
         float stepTime = 1f;
+        public float pause, idle, workPhase;
+        float tempo, speedF;
+        public boolean helper;
+
+        public float tempo() {
+            return tempo <= 0 ? 1f : tempo;
+        }
 
         public boolean walking() {
             return next >= 0;
@@ -133,6 +160,16 @@ public class World implements Serializable {
     public final boolean[] owned = new boolean[N];
     final float[] growT = new float[N];
     final boolean[] reserved = new boolean[N];
+    public boolean[] explored = new boolean[N];
+    public int exploredVer;
+    public ArrayList<Msg> msgs = new ArrayList<>();
+    public int msgCount;
+    /** fallende Bäume: {Knoten, Startzeit, Richtung} */
+    public ArrayList<float[]> falls = new ArrayList<>();
+    /** Statistik alle 30 s: {Zeit, Stämme, Bretter, Steine, Land, Leute} */
+    public ArrayList<int[]> stats = new ArrayList<>();
+    float statT, noPoolT;
+    public transient ArrayList<int[]> events;
 
     public final LinkedHashMap<Integer, Flag> flags = new LinkedHashMap<>();
     public final LinkedHashMap<Integer, Road> roads = new LinkedHashMap<>();
@@ -550,55 +587,57 @@ public class World implements Serializable {
         if (fb != null) for (int d = 0; d < 6; d++) if (fb.road[d] == r.id) fb.road[d] = -1;
         roads.remove(r.id);
         roadVer++;
-        Settler c = settlers.get(r.carrier);
-        Ware carried = null;
-        if (c != null) {
-            carried = c.carry;
+        lostCarried.clear();
+        for (int cid : new int[]{r.carrier, r.helper}) {
+            Settler c = settlers.get(cid);
+            if (c == null || c.job != J_CARRIER) continue;
+            if (c.carry != null) {
+                Ware carried = c.carry;
+                carried.res = -1;
+                carried.next = -1;
+                carried.flag = -1;
+                lostCarried.add(carried);
+            }
             settlers.remove(c.id);
             pool++;
+            for (Flag f : new Flag[]{fa, fb}) {
+                if (f == null) continue;
+                for (Ware w : f.wares) if (w.res == c.id) w.res = -1;
+            }
         }
         for (Flag f : new Flag[]{fa, fb}) {
             if (f == null) continue;
-            for (Ware w : f.wares) {
-                if (w.next == r.id) w.next = -1;
-                if (c != null && w.res == c.id) w.res = -1;
-            }
-        }
-        if (carried != null) {
-            carried.res = -1;
-            carried.next = -1;
-            carried.flag = -1;
-            // Ware geht verloren, wenn der Träger sie gerade trug (wird bei splitRoad wieder abgelegt)
-            lostCarried = carried;
+            for (Ware w : f.wares) if (w.next == r.id) w.next = -1;
         }
     }
 
-    private transient Ware lostCarried;
+    private transient ArrayList<Ware> lostCarried = new ArrayList<>();
 
     private void splitRoad(Road r, Flag f) {
         int k = -1;
         for (int i = 1; i < r.path.length - 1; i++) if (r.path[i] == f.node) k = i;
         if (k < 0) return;
-        lostCarried = null;
+        if (lostCarried == null) lostCarried = new ArrayList<>();
         detachRoad(r);
-        createRoad(java.util.Arrays.copyOfRange(r.path, 0, k + 1));
-        createRoad(java.util.Arrays.copyOfRange(r.path, k, r.path.length));
-        if (lostCarried != null) {
-            Ware w = lostCarried;
-            lostCarried = null;
+        Road r1 = createRoad(java.util.Arrays.copyOfRange(r.path, 0, k + 1));
+        Road r2 = createRoad(java.util.Arrays.copyOfRange(r.path, k, r.path.length));
+        for (Road nr : new Road[]{r1, r2}) {
+            nr.level = r.level;
+            nr.traffic = r.traffic / 2;
+        }
+        for (Ware w : new ArrayList<>(lostCarried)) {
             w.flag = f.id;
             f.wares.add(w);
             route(w, f);
         }
+        lostCarried.clear();
     }
 
     public void removeRoad(Road r) {
-        lostCarried = null;
+        if (lostCarried == null) lostCarried = new ArrayList<>();
         detachRoad(r);
-        if (lostCarried != null) {
-            loseWare(lostCarried);
-            lostCarried = null;
-        }
+        for (Ware w : lostCarried) loseWare(w);
+        lostCarried.clear();
         for (int i = 0; i + 1 < r.path.length; i++) {
             int d = dirTo(r.path[i], r.path[i + 1]);
             roadDirs[r.path[i]] &= (byte) ~(1 << d);
@@ -672,11 +711,46 @@ public class World implements Serializable {
 
     public void recomputeTerritory() {
         java.util.Arrays.fill(owned, false);
+        if (explored == null) explored = new boolean[N];
         for (Building b : buildings.values()) {
             int r = B_RADIUS[b.type];
             if (r <= 0 || !b.occupied) continue;
             for (int m : around(b.node, r)) owned[m] = true;
+            for (int m : around(b.node, r + 3)) explored[m] = true;
         }
+        exploredVer++;
+    }
+
+    /** Nach dem Laden eines älteren Spielstands fehlende Teile ergänzen. */
+    public void fixup() {
+        if (msgs == null) msgs = new ArrayList<>();
+        if (falls == null) falls = new ArrayList<>();
+        if (stats == null) stats = new ArrayList<>();
+        if (explored == null) {
+            explored = new boolean[N];
+            recomputeTerritory();
+        }
+        if (producedTotal == null) producedTotal = new int[NWARES];
+    }
+
+    void ev(int type, int node) {
+        if (events == null) events = new ArrayList<>();
+        if (events.size() < 64) events.add(new int[]{type, node});
+    }
+
+    public void msg(String text, int node) {
+        Msg m = new Msg();
+        m.text = text;
+        m.node = node;
+        m.time = time;
+        msgs.add(m);
+        msgCount++;
+        while (msgs.size() > 40) msgs.remove(0);
+    }
+
+    /** Wie viele Leute gibt es insgesamt (frei + unterwegs + in Gebäuden). */
+    public int people() {
+        return pool + settlers.size();
     }
 
     // ---------------- Wegenetz ----------------
@@ -710,7 +784,7 @@ public class World implements Serializable {
                 Road r = roads.get(f.road[d]);
                 if (r == null) continue;
                 int other = r.a == f.id ? r.b : r.a;
-                int nd = cur[0] + r.path.length - 1 + (r.carrier < 0 ? 4 : 0);
+                int nd = cur[0] + (r.path.length - 1) * (r.level >= 1 ? 7 : 10) + (r.carrier < 0 ? 40 : 0);
                 Integer od = rt.dist.get(other);
                 if (od == null || nd < od) {
                     rt.dist.put(other, nd);
@@ -813,7 +887,7 @@ public class World implements Serializable {
     int deficit(Building b, int t) {
         if (b.id == hq) return 0;
         if (!b.done) return B_COST[b.type][t] - b.got[t] - b.incoming[t];
-        if (b.type == B_SAW && t == WARE_LOG) return 4 - b.stock[t] - b.incoming[t];
+        if (b.type == B_SAW && t == WARE_LOG) return b.stopped ? 0 : 4 - b.stock[t] - b.incoming[t];
         return 0;
     }
 
@@ -877,6 +951,7 @@ public class World implements Serializable {
         s.id = newId();
         s.job = job;
         s.node = hqB().node;
+        s.tempo = 0.85f + rng.nextFloat() * 0.3f;
         settlers.put(s.id, s);
         setPath(s, path);
         return s;
@@ -887,7 +962,14 @@ public class World implements Serializable {
         s.pi = 0;
         s.prog = 0;
         s.next = (path != null && path.length > 0) ? path[0] : -1;
-        if (s.next >= 0) s.stepTime = stepTime(s.node, s.next);
+        if (s.next >= 0) s.stepTime = stepTime(s, s.node, s.next);
+    }
+
+    float stepTime(Settler s, int a, int b) {
+        float t = stepTime(a, b);
+        if (s.speedF > 0) t *= s.speedF;
+        if (s.carry != null || s.carryType >= 0) t *= 1.12f;
+        return t;
     }
 
     float stepTime(int a, int b) {
@@ -918,7 +1000,7 @@ public class World implements Serializable {
         for (Building b : buildings.values()) {
             if (b.id == hq) continue;
             if (!b.done && b.builder < 0) {
-                if (pool <= 0) { b.status = "Keine Siedler frei"; continue; }
+                if (pool <= 0) { b.status = "Keine Siedler frei"; noPool(); continue; }
                 int[] p = pathFromHq(b);
                 if (p == null) { b.status = "Kein Weg zum Hauptquartier"; continue; }
                 Settler s = spawn(J_BUILDER, p);
@@ -931,6 +1013,7 @@ public class World implements Serializable {
                 int job = jobFor(b.type);
                 if (job == J_SOLDIER ? soldiers <= 0 : pool <= 0) {
                     b.status = job == J_SOLDIER ? "Keine Soldaten frei" : "Keine Siedler frei";
+                    if (job != J_SOLDIER) noPool();
                     continue;
                 }
                 int[] p = pathFromHq(b);
@@ -944,8 +1027,10 @@ public class World implements Serializable {
             }
         }
         for (Road r : roads.values()) {
-            if (r.carrier >= 0 || pool <= 0) continue;
+            boolean needHelper = r.level >= 2 && (r.helper == 0 || !settlers.containsKey(r.helper)) && r.carrier >= 0;
+            if ((r.carrier >= 0 && !needHelper) || pool <= 0) continue;
             int mid = r.path.length / 2;
+            if (needHelper && mid > 1) mid--;
             int[] p = null;
             int[] pa = netPath(h.flag, r.a);
             if (pa != null) {
@@ -963,9 +1048,19 @@ public class World implements Serializable {
             s.state = C_GO;
             s.home = r.id;
             s.ridx = mid;
-            r.carrier = s.id;
+            if (needHelper) {
+                r.helper = s.id;
+                s.helper = true;
+            } else r.carrier = s.id;
             pool--;
             roadVer++; // Wege mit Träger werden bevorzugt
+        }
+    }
+
+    private void noPool() {
+        if (time - noPoolT > 120f || noPoolT == 0) {
+            noPoolT = time;
+            msg("Keine freien Siedler mehr – es kommen langsam neue dazu", hqB().node);
         }
     }
 
@@ -1033,8 +1128,37 @@ public class World implements Serializable {
             }
             growTick = 0;
         }
+        statT += dt;
+        if (statT >= 30f || stats.isEmpty()) {
+            statT = 0;
+            int land = 0;
+            for (boolean o : owned) if (o) land++;
+            Building h = hqB();
+            stats.add(new int[]{(int) time, h.stock[0], h.stock[1], h.stock[2], land, people()});
+            if (stats.size() > 480) {
+                // ältere Hälfte ausdünnen
+                ArrayList<int[]> n = new ArrayList<>();
+                for (int i = 0; i < stats.size(); i++) if (i % 2 == 0 || i >= stats.size() / 2) n.add(stats.get(i));
+                stats = n;
+            }
+        }
+        for (Building b : buildings.values()) {
+            if (!b.done || b.id == hq || b.type >= B_GUARD) continue;
+            Settler wk = settlers.get(b.worker);
+            if (wk == null || wk.state == S_TO_SITE || b.stopped) continue;
+            float target = b.problem ? 0f : 1f;
+            b.util += (target - b.util) * dt / 90f;
+        }
+        for (Road r : roads.values()) {
+            r.traffic *= (1f - dt / 300f);
+        }
+        for (int i = falls.size() - 1; i >= 0; i--) if (time - falls.get(i)[1] > 3f) falls.remove(i);
         for (Settler s : new ArrayList<>(settlers.values())) {
             if (!settlers.containsKey(s.id)) continue;
+            if (s.pause > 0) {
+                s.pause -= dt;
+                continue;
+            }
             if (s.walking()) {
                 s.prog += dt / s.stepTime;
                 if (s.prog >= 1f) {
@@ -1043,7 +1167,7 @@ public class World implements Serializable {
                     s.prog = 0;
                     if (s.pi < s.path.length) {
                         s.next = s.path[s.pi];
-                        s.stepTime = stepTime(s.node, s.next);
+                        s.stepTime = stepTime(s, s.node, s.next);
                     } else s.next = -1;
                 }
                 if (s.walking()) continue;
@@ -1088,6 +1212,8 @@ public class World implements Serializable {
                         b.occupied = true;
                         b.status = "Besetzt – das Land wächst";
                         recomputeTerritory();
+                        msg(B_NAMES[b.type] + " besetzt – dein Land ist gewachsen", b.node);
+                        ev(E_LAND, b.node);
                     } else b.status = "Arbeitet";
                 }
                 break;
@@ -1098,6 +1224,9 @@ public class World implements Serializable {
                 if (b.used < have) {
                     b.buildT += dt;
                     b.status = "Wird gebaut";
+                    float ph = s.workPhase;
+                    s.workPhase += dt * s.tempo();
+                    if ((int) (ph / 0.5f) != (int) (s.workPhase / 0.5f)) ev(E_HAMMER, b.node);
                     if (b.buildT >= BUILD_PER_MAT) {
                         b.buildT = 0;
                         b.used++;
@@ -1107,6 +1236,8 @@ public class World implements Serializable {
                     b.done = true;
                     b.builder = -1;
                     b.status = "Fertig";
+                    msg(B_NAMES[b.type] + " ist fertig gebaut", b.node);
+                    ev(E_DONE, b.node);
                     sendHome(s, b);
                 }
                 break;
@@ -1115,13 +1246,22 @@ public class World implements Serializable {
                 if (s.job == J_SOLDIER) break;
                 s.timer -= dt;
                 if (s.timer > 0) break;
+                if (b.stopped) {
+                    b.status = "Angehalten";
+                    s.timer = 1f;
+                    break;
+                }
                 if (s.job == J_SAWYER) {
                     if (b.stock[WARE_LOG] > 0) {
                         s.state = S_SAW;
-                        s.timer = 6f;
+                        s.timer = 6f / s.tempo();
+                        s.workPhase = 0;
                         b.status = "Sägt Bretter";
+                        b.problem = false;
+                        ev(E_SAW, b.node);
                     } else {
                         b.status = "Wartet auf Baumstämme";
+                        b.problem = true;
                         s.timer = 1f;
                     }
                     break;
@@ -1130,9 +1270,16 @@ public class World implements Serializable {
                 if (tgt < 0) {
                     b.status = s.job == J_WOODCUTTER ? "Keine großen Bäume in der Nähe"
                             : s.job == J_MASON ? "Keine Steine mehr in der Nähe" : "Kein Platz zum Pflanzen";
+                    b.problem = true;
+                    if ((b.noticed & 1) == 0) {
+                        b.noticed |= 1;
+                        msg(B_NAMES[b.type] + ": " + b.status, b.node);
+                    }
                     s.timer = 4f;
                     break;
                 }
+                b.problem = false;
+                b.noticed &= ~1;
                 int[] p = walkPath(bf.node, tgt, B_WORK_RADIUS[b.type] + 3);
                 if (p == null) {
                     reserved[tgt] = true; // unerreichbar, nicht wieder probieren
@@ -1150,17 +1297,25 @@ public class World implements Serializable {
                 break;
             case S_OUT_GO:
                 s.state = S_WORK;
-                s.timer = s.job == J_FORESTER ? 3f : 5f;
+                s.timer = (s.job == J_FORESTER ? 3.5f : 5f) / s.tempo();
+                s.workPhase = 0;
                 b.status = s.job == J_WOODCUTTER ? "Fällt einen Baum" : s.job == J_MASON ? "Haut Steine" : "Pflanzt einen Baum";
                 break;
             case S_WORK: {
                 s.timer -= dt;
+                float ph = s.workPhase;
+                s.workPhase += dt * s.tempo();
+                float iv = s.job == J_WOODCUTTER ? 0.75f : s.job == J_MASON ? 0.85f : 1.1f;
+                if (s.timer > 0.3f && (int) (ph / iv) != (int) (s.workPhase / iv))
+                    ev(s.job == J_WOODCUTTER ? E_CHOP : s.job == J_MASON ? E_CLINK : E_DIG, s.target);
                 if (s.timer > 0) break;
                 int t = s.target;
                 if (s.job == J_WOODCUTTER) {
                     if (obj[t] == O_TREE && objVal[t] >= 3) {
                         obj[t] = O_NONE;
                         s.carryType = WARE_LOG;
+                        falls.add(new float[]{t, time, treeKindOf(t)});
+                        ev(E_TREEFALL, t);
                     }
                 } else if (s.job == J_MASON) {
                     if (obj[t] == O_STONE) {
@@ -1190,11 +1345,14 @@ public class World implements Serializable {
                 if (s.carryType >= 0) s.state = S_DELIVER;
                 else {
                     s.state = S_INSIDE;
-                    s.timer = 5f;
+                    s.timer = 5f / s.tempo();
                 }
                 break;
-            case S_SAW:
+            case S_SAW: {
                 s.timer -= dt;
+                float ph = s.workPhase;
+                s.workPhase += dt;
+                if (s.timer > 0.5f && (int) (ph / 2f) != (int) (s.workPhase / 2f)) ev(E_SAW, b.node);
                 if (s.timer > 0) break;
                 if (b.stock[WARE_LOG] > 0) {
                     b.stock[WARE_LOG]--;
@@ -1202,15 +1360,21 @@ public class World implements Serializable {
                     s.state = S_DELIVER;
                 } else s.state = S_INSIDE;
                 break;
+            }
             case S_DELIVER:
                 if (bf.wares.size() < FLAG_CAP) {
                     addProduct(bf, s.carryType);
                     b.produced++;
                     s.carryType = -1;
                     s.state = S_INSIDE;
-                    s.timer = s.job == J_SAWYER ? 1f : 5f;
+                    s.timer = (s.job == J_SAWYER ? 1f : 5f) / s.tempo();
                     b.status = "Ruht sich aus";
-                } else b.status = "Fahne ist voll";
+                    b.problem = false;
+                    ev(E_DROP, bf.node);
+                } else {
+                    b.status = "Fahne ist voll – es fehlen Träger oder Wege";
+                    b.problem = true;
+                }
                 break;
         }
     }
@@ -1227,6 +1391,12 @@ public class World implements Serializable {
             return;
         }
         setPath(s, concat(p, hqB().node));
+    }
+
+    public int treeKindOf(int n) {
+        int h = n * 73856093 ^ (int) seed * 19349663;
+        int k = Math.abs(h) % 7;
+        return k < 3 ? 0 : k < 6 ? 1 : 2;
     }
 
     int findTarget(int job, int center) {
@@ -1275,6 +1445,8 @@ public class World implements Serializable {
         if (to > from) for (int i = from + 1; i <= to; i++) p.add(r.path[i]);
         else for (int i = from - 1; i >= to; i--) p.add(r.path[i]);
         s.node = r.path[from];
+        s.speedF = r.level >= 1 ? 0.7f : 1f;
+        s.idle = 0;
         setPath(s, toArr(p));
         s.ridx = to;
     }
@@ -1292,6 +1464,7 @@ public class World implements Serializable {
                 s.state = C_IDLE;
                 // fall through
             case C_IDLE: {
+                s.idle += 0.05f;
                 for (int e = 0; e < 2; e++) {
                     Ware w = waiting(endFlag(r, e), r, s);
                     if (w != null) {
@@ -1328,7 +1501,9 @@ public class World implements Serializable {
                     w.flag = f.id;
                     f.wares.add(w);
                     route(w, f);
+                    traffic(r);
                     afterTrip(s, r, s.target);
+                    s.pause = 0.35f;
                 } else {
                     // Fahne voll: tauschen, wenn dort etwas für unseren Weg wartet
                     Ware other = waiting(f, r, s);
@@ -1355,6 +1530,28 @@ public class World implements Serializable {
         s.target = other;
         walkRoad(s, r, endIndex(r, other));
         s.state = C_CARRY;
+        s.pause = 0.4f;
+    }
+
+    private void traffic(Road r) {
+        r.traffic += 1f;
+        if (r.level == 0 && r.traffic >= 20f) {
+            r.level = 1;
+            roadVer++;
+            msg("Ein viel benutzter Weg wurde gepflastert – dort geht es schneller", r.path[r.path.length / 2]);
+            ev(E_PAVE, r.path[r.path.length / 2]);
+        } else if (r.level == 1 && r.traffic >= 38f) {
+            r.level = 2;
+            roadVer++;
+            msg("Viel Verkehr – ein zweiter Träger hilft auf diesem Weg", r.path[r.path.length / 2]);
+            ev(E_PAVE, r.path[r.path.length / 2]);
+        }
+    }
+
+    /** Arbeit in einem Gebäude anhalten oder fortsetzen. */
+    public void setStopped(Building b, boolean stop) {
+        b.stopped = stop;
+        b.status = stop ? "Angehalten" : "Arbeitet wieder";
     }
 
     private void afterTrip(Settler s, Road r, int atEnd) {

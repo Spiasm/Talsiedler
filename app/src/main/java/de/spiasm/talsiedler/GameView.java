@@ -26,6 +26,7 @@ public class GameView extends View {
     public void setWorld(World w) {
         world = w;
         hud.w = w;
+        hud.reset();
         ren.selected = -1;
         ren.roadFrom = -1;
         if (ren.viewW > 0) ren.centerOn(w, w.hqB().node);
@@ -55,7 +56,7 @@ public class GameView extends View {
         if (dt > 0.25f) dt = 0.25f;
         clock += dt;
         if (world != null) {
-            if (!hud.paused) {
+            if (!hud.paused && !hud.intro) {
                 acc += dt * hud.speed;
                 int steps = 0;
                 while (acc >= 0.05f && steps < 40) {
@@ -72,6 +73,7 @@ public class GameView extends View {
             }
             ren.draw(c, world, clock);
             hud.draw(c, clock);
+            host.frame(world, ren, dt, hud.paused || hud.intro);
         }
         postInvalidateOnAnimation();
     }

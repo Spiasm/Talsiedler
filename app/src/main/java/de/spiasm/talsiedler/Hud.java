@@ -59,7 +59,8 @@ public class Hud {
         panelNode = -1;
     }
 
-    static final int WIN_NONE = 0, WIN_STORE = 1, WIN_STATS = 2, WIN_MSGS = 3, WIN_SLOTS = 4, WIN_SOUND = 5, WIN_MP = 6;
+    static final int WIN_NONE = 0, WIN_STORE = 1, WIN_STATS = 2, WIN_MSGS = 3, WIN_SLOTS = 4, WIN_SOUND = 5, WIN_MP = 6, WIN_TOOLS = 7;
+    private int buildTab;
     /** eigener Spieler */
     public int me;
     private int pendBuild = -1, pendFlag = -1, pendRoadEnd = -1, confirmSlot, confirmSlotKind;
@@ -372,6 +373,7 @@ public class Hud {
         if (win == WIN_SLOTS) slots(c, vw, vh);
         if (win == WIN_SOUND) soundWin(c, vw, vh);
         if (win == WIN_MP) mpWin(c, vw, vh);
+        if (win == WIN_TOOLS) toolsWin(c, vw, vh);
     }
 
     private boolean mine(World.Msg m) {
@@ -385,21 +387,26 @@ public class Hud {
         c.drawRect(0, h - 3 * u, vw, h, p);
         World.Building hq = w.hqB(me);
         float x = 18 * u;
-        btns.add(new Btn(rect(0, 0, 560 * u, h), () -> { win = WIN_STORE; }, "Lager"));
-        for (int t = 0; t < World.NWARES; t++) {
+        btns.add(new Btn(rect(0, 0, 590 * u, h), () -> { win = WIN_STORE; }, "Lager"));
+        int[] show = {World.WARE_LOG, World.WARE_BOARD, World.WARE_STONE, World.WARE_BREAD};
+        String[] lbl = {"Stämme", "Bretter", "Steine", "Nahrung"};
+        for (int i = 0; i < show.length; i++) {
+            int t = show[i];
             c.save();
             c.translate(x + 14 * u, h / 2);
             c.scale(2.4f * u, 2.4f * u);
             ren.ware(c, t, 0, 0, 1f);
             c.restore();
-            text(c, String.valueOf(hq.stock[t]), x + 34 * u, h / 2 + 8 * u, 24 * u, 0xFFFFFFFF, true, Paint.Align.LEFT);
-            text(c, t == 0 ? "Stämme" : t == 1 ? "Bretter" : "Steine", x + 34 * u, h / 2 + 24 * u, 11 * u, 0xFFCDBB9A, false, Paint.Align.LEFT);
-            x += 106 * u;
+            int val = i == 3 ? w.stockTotal(me, World.WARE_FISH) + w.stockTotal(me, World.WARE_MEAT) + w.stockTotal(me, World.WARE_BREAD)
+                    : w.stockTotal(me, t);
+            text(c, String.valueOf(val), x + 34 * u, h / 2 + 8 * u, 24 * u, 0xFFFFFFFF, true, Paint.Align.LEFT);
+            text(c, lbl[i], x + 34 * u, h / 2 + 24 * u, 11 * u, 0xFFCDBB9A, false, Paint.Align.LEFT);
+            x += 96 * u;
         }
         person(c, x + 12 * u, h / 2 + 16 * u, 0xFFD84315, 2.2f * u, false);
         text(c, String.valueOf(w.pool(me)), x + 30 * u, h / 2 + 8 * u, 24 * u, 0xFFFFFFFF, true, Paint.Align.LEFT);
         text(c, "Siedler", x + 30 * u, h / 2 + 24 * u, 11 * u, 0xFFCDBB9A, false, Paint.Align.LEFT);
-        x += 100 * u;
+        x += 92 * u;
         person(c, x + 12 * u, h / 2 + 16 * u, 0xFF1E5BC6, 2.2f * u, true);
         text(c, String.valueOf(w.soldiers(me)), x + 30 * u, h / 2 + 8 * u, 24 * u, 0xFFFFFFFF, true, Paint.Align.LEFT);
         text(c, "Soldaten", x + 30 * u, h / 2 + 24 * u, 11 * u, 0xFFCDBB9A, false, Paint.Align.LEFT);
@@ -484,6 +491,24 @@ public class Hud {
             return "Ein Förster pflanzt neue Bäume, damit dem Holzfäller das Holz nicht ausgeht.";
         if (w.countBuildings(World.B_GUARD, false, me) + w.countBuildings(World.B_TOWER, false, me) == 0)
             return "Baue eine Wachstube nahe der blauen Grenze. Sobald ein Soldat drin ist, wird dein Land größer.";
+        if (w.countBuildings(World.B_FISH, false, me) + w.countBuildings(World.B_HUNT, false, me) == 0)
+            return "Stufe 2: Bergleute brauchen Nahrung. Baue einen Fischer nah am Wasser oder einen Jäger im Wald („Nahrung“ im Bau-Menü).";
+        boolean geo = false;
+        for (byte sg : w.sign) if (sg != 0) geo = true;
+        int mines = 0;
+        for (int t = World.B_COAL; t <= World.B_GRANITE; t++) mines += w.countBuildings(t, false, me);
+        if (!geo && mines == 0)
+            return "Tippe eine Fahne nahe am Berg an und dann „Geologen schicken“. Er stellt Schilder auf: schwarz = Kohle, rostrot = Eisen, gelb = Gold, grau = Granit.";
+        if (mines == 0)
+            return "Tippe auf den Berg neben ein Schild und baue die passende Mine. Kleine dunkle Eingänge zeigen, wo Minen hinpassen.";
+        if (w.countBuildings(World.B_FARM, false, me) == 0 || w.countBuildings(World.B_WELL, false, me) == 0)
+            return "Brot ist die beste Nahrung: Bauernhof (Getreide) → Mühle (Mehl) → Bäckerei (mit Wasser vom Brunnen).";
+        if (w.countBuildings(World.B_SMELTER, false, me) == 0)
+            return "Eisenschmelze: macht aus Eisenerz und Kohle Eisen.";
+        if (w.countBuildings(World.B_TOOLS, false, me) == 0)
+            return "Werkzeugmacher: macht aus Eisen und Brettern neues Werkzeug. Was zuerst, stellst du im Menü unter „Werkzeug“ ein.";
+        if (w.countBuildings(World.B_SCOUT, false, me) == 0)
+            return "Eine Späherhütte schickt einen Späher in den Nebel – so findest du neues Land, Berge und Wasser.";
         return null;
     }
 
@@ -526,10 +551,10 @@ public class Hud {
             y += 120 * u;
             if (!World.isHq(b)) y = wrap(c, b.status, x, y, in, 19 * u, 0xFF5D4037) + 6 * u;
             if (!b.done) {
-                for (int t = 1; t < World.NWARES; t++) {
+                for (int t = 1; t < 3; t++) {
                     int need = World.B_COST[b.type][t];
                     if (need == 0) continue;
-                    y = wrap(c, World.WARE_NAMES[t] + (t == 1 ? "er" : "e") + ": " + b.got[t] + " von " + need + " da", x, y, in, 18 * u, dark);
+                    y = wrap(c, World.WARE_PLURAL[t] + ": " + b.got[t] + " von " + need + " da", x, y, in, 18 * u, dark);
                 }
                 y = wrap(c, "Fortschritt: " + Math.round(b.progress() * 100) + " %", x, y, in, 18 * u, dark);
             } else if (World.isHq(b)) {
@@ -537,19 +562,51 @@ public class Hud {
                 y = wrap(c, "Freie Siedler: " + w.pool(me) + " von " + World.POOL_MAX + " (alle 20 Sekunden kommt einer dazu)", x, y, in, 18 * u, dark);
                 y = wrap(c, "Soldaten: " + w.soldiers(me), x, y, in, 18 * u, dark);
             } else {
-                if (b.type < World.B_GUARD)
+                if (World.hasUtil(b.type))
                     y = wrap(c, "Auslastung: " + Math.round(b.util * 100) + " %" + (b.problem ? " – wartet gerade" : ""), x, y, in, 18 * u,
                             b.util >= 0.7f ? 0xFF2E7D32 : b.util >= 0.35f ? 0xFFB26A00 : 0xFFC62828);
-                if (b.type == World.B_SAW) y = wrap(c, "Baumstämme im Lager: " + b.stock[World.WARE_LOG], x, y, in, 18 * u, dark);
-                if (b.type == World.B_WOOD || b.type == World.B_QUARRY || b.type == World.B_SAW)
-                    y = wrap(c, "Schon hergestellt: " + b.produced, x, y, in, 18 * u, dark);
+                int[] in2 = World.RECIPE_IN[b.type];
+                if (in2.length > 0) {
+                    StringBuilder sb = new StringBuilder("Vorrat: ");
+                    for (int k = 0; k < in2.length; k++) {
+                        if (k > 0) sb.append(", ");
+                        sb.append(b.stock[in2[k]]).append(' ').append(b.stock[in2[k]] == 1 ? World.WARE_NAMES[in2[k]] : World.WARE_PLURAL[in2[k]]);
+                    }
+                    y = wrap(c, sb.toString(), x, y, in, 18 * u, dark);
+                }
+                if (World.isMine(b.type)) {
+                    int left = 0;
+                    for (int m : World.around(b.node, World.B_WORK_RADIUS[b.type]))
+                        if (w.res[m] == b.type - World.B_COAL + 1) left += w.resAmt[m];
+                    y = wrap(c, "Noch im Berg: etwa " + left + " " + World.RES_NAMES[b.type - World.B_COAL + 1], x, y, in, 18 * u, dark);
+                }
                 if (b.type == World.B_FOREST) y = wrap(c, "Gepflanzte Bäume: " + b.produced, x, y, in, 18 * u, dark);
-                if (b.type >= World.B_GUARD) y = wrap(c, b.occupied ? "Besetzt. Hält das Land im Umkreis." : "Wartet auf einen Soldaten.", x, y, in, 18 * u, dark);
+                else if (b.type == World.B_SCOUT) y = wrap(c, "Erkundungen: " + b.produced, x, y, in, 18 * u, dark);
+                else if (World.hasUtil(b.type)) y = wrap(c, "Schon hergestellt: " + b.produced, x, y, in, 18 * u, dark);
+                if (b.type == World.B_STORE) {
+                    int sum = 0;
+                    for (int t2 = 0; t2 < World.NWARES; t2++) sum += b.stock[t2];
+                    y = wrap(c, "Hier gelagert: " + sum + " Waren. Waren, die gerade niemand braucht, kommen ins nächste Lager.", x, y, in, 18 * u, dark);
+                }
+                if (World.isMilitary(b.type)) y = wrap(c, b.occupied ? "Besetzt. Hält das Land im Umkreis." : "Wartet auf einen Soldaten.", x, y, in, 18 * u, dark);
             }
             final World.Building fb = b;
-            boolean canStop = b.done && !World.isHq(b) && b.type < World.B_GUARD;
-            float by = r.bottom - (canStop ? 190 : 128) * u;
+            boolean canStop = b.done && World.hasUtil(b.type);
+            boolean site = !b.done;
+            boolean toolsBtn = b.done && b.type == World.B_TOOLS;
+            float by = r.bottom - ((canStop || site ? 190 : 128) + (toolsBtn ? 62 : 0)) * u;
+            if (toolsBtn) {
+                button(c, x, by, in, 52 * u, "Werkzeug einstellen", 0xFF5D6B3A, true, () -> win = WIN_TOOLS);
+                by += 62 * u;
+            }
             button(c, x, by, in, 52 * u, "Weg bauen", 0xFF1565C0, true, () -> startRoad(fb.flag));
+            if (site) {
+                by += 62 * u;
+                button(c, x, by, in, 52 * u, b.prio ? "Wird zuerst gebaut ✓" : "Zuerst bauen", b.prio ? 0xFFEF8F00 : 0xFF6D4C41, true, () -> {
+                    host.exec(new int[]{World.C_PRIO, me, fb.id, fb.prio ? 0 : 1});
+                    say(fb.prio ? "Normale Reihenfolge." : "Diese Baustelle bekommt das Material zuerst.");
+                });
+            }
             if (canStop) {
                 by += 62 * u;
                 button(c, x, by, in, 52 * u, b.stopped ? "Weiter arbeiten" : "Arbeit stoppen", b.stopped ? 0xFF2E7D32 : 0xFF6D4C41, true,
@@ -570,8 +627,17 @@ public class Hud {
             y = wrap(c, "Wege an dieser Fahne: " + nr, x, y, in, 18 * u, dark);
             if (f.id != w.hqB(me).flag && !w.connected(f.id, w.hqB(me).flag))
                 y = wrap(c, "Diese Fahne ist noch nicht mit dem Hauptquartier verbunden.", x, y + 6 * u, in, 18 * u, 0xFFC62828);
-            float by = r.bottom - 128 * u;
+            boolean mountainNear = false;
+            for (int m : World.around(f.node, 6)) if (w.terrain[m] == World.T_MOUNTAIN) mountainNear = true;
+            if (mountainNear) y = wrap(c, "Am Berg? Schick einen Geologen – er sucht Bodenschätze und stellt Schilder auf.", x, y + 6 * u, in, 17 * u, 0xFF5D4037);
+            float by = r.bottom - 190 * u;
             final World.Flag ff = f;
+            button(c, x, by, in, 52 * u, "Geologen schicken", 0xFF5D6B3A, true, () -> {
+                host.exec(new int[]{World.C_GEO, me, ff.id, 0});
+                say("Ein Geologe macht sich auf den Weg (braucht einen Hammer).");
+                select(-1);
+            });
+            by += 62 * u;
             button(c, x, by, in, 52 * u, "Weg bauen", 0xFF1565C0, true, () -> startRoad(ff.id));
             if (f.id != w.hqB(me).flag) {
                 World.Building fbld = w.buildingAt(World.nb(f.node, 4));
@@ -628,22 +694,48 @@ public class Hud {
             return;
         }
         int size = w.buildSize(n, me);
+        boolean mine = w.mineOk(n, me);
         boolean flagOk = w.canFlag(n, me);
-        text(c, "Bauen", x, y, 24 * u, dark, true, Paint.Align.LEFT);
+        text(c, mine ? "Mine bauen" : "Bauen", x, y, 24 * u, dark, true, Paint.Align.LEFT);
         y += 14 * u;
+        int[] types;
+        if (mine) {
+            types = new int[]{World.B_COAL, World.B_IRON, World.B_GOLD, World.B_GRANITE};
+            int sg = w.sign[n];
+            y = wrap(c, sg > 0 && sg < 9 ? "Das Schild hier sagt: " + World.RES_NAMES[sg] + "." : sg == 9 ? "Der Geologe hat hier nichts gefunden."
+                    : "Tipp: Erst einen Geologen schicken, damit du weißt, was im Berg steckt.", x, y + 18 * u, in, 16 * u, 0xFF5D4037);
+            size = 4;
+        } else {
+            String[] tabs = {"Holz & Stein", "Nahrung", "Metall", "Militär"};
+            float tw = (in - 18 * u) / 4;
+            for (int k = 0; k < 4; k++) {
+                final int kk = k;
+                float tx = x + k * (tw + 6 * u);
+                RectF tr = rect(tx, y, tx + tw, y + 40 * u);
+                box(c, tr, buildTab == k ? 0xFF8D6E4A : 0xFFD7C7A6, 10 * u);
+                text(c, tabs[k], tx + tw / 2, y + 26 * u, 13.5f * u, buildTab == k ? 0xFFFFFFFF : dark, true, Paint.Align.CENTER);
+                btns.add(new Btn(tr, () -> buildTab = kk, tabs[k]));
+            }
+            y += 46 * u;
+            types = buildTab == 0 ? new int[]{World.B_WOOD, World.B_QUARRY, World.B_FOREST, World.B_SAW, World.B_STORE, World.B_SCOUT}
+                    : buildTab == 1 ? new int[]{World.B_FISH, World.B_HUNT, World.B_WELL, World.B_FARM, World.B_MILL, World.B_BAKERY, World.B_PIGS, World.B_BUTCHER}
+                    : buildTab == 2 ? new int[]{World.B_SMELTER, World.B_TOOLS}
+                    : new int[]{World.B_GUARD, World.B_TOWER};
+            if (buildTab == 2 && size > 0)
+                wrap(c, "Minen baust du direkt auf einem Berg: dort hintippen.", x, y + 240 * u, in, 16 * u, 0xFF5D4037);
+        }
         if (size == 0) {
             String why = w.obj[n] == World.O_TREE ? "Hier steht ein Baum."
                     : w.obj[n] == World.O_STONE ? "Hier liegen Steine."
                     : w.terrain[n] == World.T_WATER ? "Das ist Wasser."
-                    : w.terrain[n] == World.T_MOUNTAIN ? "Auf dem Berg kann man (noch) nicht bauen."
+                    : w.terrain[n] == World.T_MOUNTAIN ? "Hier passt keine Mine hin – such eine Stelle mit kleinem dunklem Eingang („Bauplätze“)."
                     : w.terrain[n] == World.T_SAND ? "Auf Sand kann man keine Häuser bauen."
                     : "Für ein Haus ist hier kein Platz.";
             y = wrap(c, why, x, y + 20 * u, in, 18 * u, dark);
         }
-        float cw = (in - 12 * u) / 2, ch = 118 * u;
+        float cw = (in - 12 * u) / 2, ch = 104 * u;
         int col = 0;
         float yy = y + 6 * u;
-        int[] types = {World.B_WOOD, World.B_QUARRY, World.B_FOREST, World.B_SAW, World.B_GUARD, World.B_TOWER};
         if (size > 0) {
             for (int type : types) {
                 boolean ok = size >= World.B_SIZE[type];
@@ -656,20 +748,21 @@ public class Hud {
                 c.drawRoundRect(br, 12 * u, 12 * u, p);
                 p.setStyle(Paint.Style.FILL);
                 c.save();
-                c.translate(bx + cw / 2, yy + 62 * u);
-                float sc = (type == World.B_TOWER ? 1.25f : 1.6f) * u;
+                c.translate(bx + cw / 2, yy + 54 * u);
+                float sc = (type == World.B_TOWER || type == World.B_MILL || type == World.B_SMELTER || type == World.B_SCOUT ? 1.1f
+                        : World.B_SIZE[type] == 2 ? 1.2f : 1.5f) * u;
                 c.scale(sc, sc);
                 ren.bannerFor(me);
                 ren.buildingSprite(c, type, 0, 0, now);
                 c.restore();
-                text(c, World.B_NAMES[type], bx + cw / 2, yy + 86 * u, 16 * u, ok ? dark : 0xFF8A7D66, true, Paint.Align.CENTER);
+                text(c, World.B_NAMES[type], bx + cw / 2, yy + 76 * u, 15 * u, ok ? dark : 0xFF8A7D66, true, Paint.Align.CENTER);
                 int[] cost = World.B_COST[type];
                 String cs = cost[1] + " Bretter" + (cost[2] > 0 ? ", " + cost[2] + (cost[2] == 1 ? " Stein" : " Steine") : "");
-                text(c, ok ? cs : "zu wenig Platz", bx + cw / 2, yy + 106 * u, 13 * u, ok ? 0xFF6D5A44 : 0xFF8A7D66, false, Paint.Align.CENTER);
+                text(c, ok ? cs : "zu wenig Platz", bx + cw / 2, yy + 94 * u, 12.5f * u, ok ? 0xFF6D5A44 : 0xFF8A7D66, false, Paint.Align.CENTER);
                 if (ok) {
                     final int tt = type;
                     btns.add(new Btn(br, () -> {
-                        if (w.buildSize(n, me) < World.B_SIZE[tt]) {
+                        if (World.B_SIZE[tt] == 4 ? !w.mineOk(n, me) : w.buildSize(n, me) < World.B_SIZE[tt]) {
                             err("Hier geht das nicht.");
                             return;
                         }
@@ -704,11 +797,11 @@ public class Hud {
 
     private void menu(Canvas c, int vw, int vh) {
         box(c, rect(0, 0, vw, vh), 0x99000000, 0);
-        float mw = 560 * u, mh = 570 * u;
+        float mw = 560 * u, mh = 640 * u;
         RectF r = rect(vw / 2f - mw / 2, vh / 2f - mh / 2, vw / 2f + mw / 2, vh / 2f + mh / 2);
         box(c, r, 0xFFE9DCC0, 18 * u);
         text(c, "Talsiedler", vw / 2f, r.top + 54 * u, 34 * u, 0xFF3B2A1A, true, Paint.Align.CENTER);
-        text(c, "Stufe 1 – Holz, Steine, Bretter, Wege", vw / 2f, r.top + 84 * u, 16 * u, 0xFF6D5A44, false, Paint.Align.CENTER);
+        text(c, "Stufe 2 – Nahrung, Bergbau, Werkzeug", vw / 2f, r.top + 84 * u, 16 * u, 0xFF6D5A44, false, Paint.Align.CENTER);
         float bx = r.left + 36 * u, bw = (mw - 84 * u) / 2, gap = 12 * u, bh = 58 * u;
         float bx2 = bx + bw + gap;
         float y0 = r.top + 108 * u;
@@ -719,6 +812,9 @@ public class Hud {
         y0 += bh + gap;
         button(c, bx, y0, bw, bh, "Statistik", 0xFF5D6B3A, true, () -> { win = WIN_STATS; menu = false; });
         button(c, bx2, y0, bw, bh, "Meldungen", 0xFF5D6B3A, true, () -> { win = WIN_MSGS; menu = false; });
+        y0 += bh + gap;
+        button(c, bx, y0, bw, bh, "Lager", 0xFF5D6B3A, true, () -> { win = WIN_STORE; menu = false; });
+        button(c, bx2, y0, bw, bh, "Werkzeug", 0xFF5D6B3A, true, () -> { win = WIN_TOOLS; menu = false; });
         y0 += bh + gap;
         button(c, bx, y0, bw, bh, "Ton", 0xFF5D6B3A, true, () -> { win = WIN_SOUND; menu = false; });
         button(c, bx2, y0, bw, bh, "2 Spieler", 0xFF6A1B9A, true, () -> { win = WIN_MP; menu = false; });
@@ -747,7 +843,11 @@ public class Hud {
             "5. Holzfäller fällt Bäume → Sägewerk macht Bretter. Förster pflanzt neue Bäume. Steinbruch holt Steine.",
             "6. Wachstube/Wachturm an der Grenze: ein Soldat zieht ein und dein Land wächst.",
             "7. Viel benutzte Wege werden gepflastert (schneller) und bekommen bei noch mehr Verkehr einen zweiten Träger.",
-            "8. Zu zweit: Menü → „2 Spieler“. Die Tablets einmal in den Android-Einstellungen per Bluetooth koppeln. Einer tippt „Spiel erstellen“, der andere wählt dieses Tablet aus der Liste.",
+            "8. Nahrung: Fischer (am Wasser), Jäger (im Wald), Bauernhof → Mühle → Bäckerei (+ Brunnen), Schweinezucht → Metzgerei.",
+            "9. Bergbau: Geologen an eine Fahne am Berg schicken, dann die passende Mine auf den Berg bauen. Minen brauchen Nahrung. Eisenschmelze: Erz + Kohle → Eisen. Werkzeugmacher: Eisen + Brett → Werkzeug.",
+            "10. Jeder Beruf braucht sein Werkzeug (Axt, Säge, Spitzhacke …). Fehlt eins, steht es beim Gebäude. Menü → „Werkzeug“ bestimmt, was zuerst gemacht wird.",
+            "11. Lagerhaus: zweites Lager, kurze Wege. Späherhütte: der Späher erkundet den Nebel. Bei Baustellen: „Zuerst bauen“.",
+            "12. Zu zweit: Menü → „2 Spieler“. Die Tablets einmal in den Android-Einstellungen per Bluetooth koppeln. Einer tippt „Spiel erstellen“, der andere wählt dieses Tablet aus der Liste.",
             "Bedienen: Mit einem Finger schieben, mit zwei Fingern zoomen. „Bauplätze“ zeigt, wo was hinpasst: gelb = klein, orange = groß. „Auslastung“ zeigt, wie fleißig jedes Haus ist. Oben auf die Waren tippen öffnet das Lager. Die kleine Karte unten links bringt dich mit einem Tipp überall hin.",
     };
 
@@ -879,8 +979,7 @@ public class Hud {
     }
 
     private void store(Canvas c, int vw, int vh) {
-        RectF r = window(c, vw, vh, 820 * u, 600 * u, "Lager & Leute");
-        World.Building hq = w.hqB(me);
+        RectF r = window(c, vw, vh, 1000 * u, 560 * u, "Lager & Leute");
         int dark = 0xFF3B2A1A;
         int[] onWay = new int[World.NWARES];
         for (World.Flag f : w.flags.values()) if (f.player == me) for (World.Ware x : f.wares) onWay[x.type]++;
@@ -893,50 +992,110 @@ public class Hud {
             else if (s.job == World.J_SOLDIER) soldiersOut++;
             else workers++;
         }
-        float x = r.left + 30 * u, y = r.top + 96 * u;
-        text(c, "Baustoffe", x, y, 21 * u, 0xFF8D6E4A, true, Paint.Align.LEFT);
-        y += 16 * u;
-        String[] names = {"Baumstämme", "Bretter", "Steine"};
-        float cw = (r.width() - 60 * u) / 3;
-        for (int t = 0; t < World.NWARES; t++) {
-            float bx = x + t * cw;
-            box(c, rect(bx, y, bx + cw - 14 * u, y + 120 * u), 0xFFF7EEDA, 12 * u);
-            c.save();
-            c.translate(bx + 40 * u, y + 52 * u);
-            c.scale(4f * u, 4f * u);
-            ren.ware(c, t, 0, 0, 1f);
-            c.restore();
-            text(c, String.valueOf(hq.stock[t]), bx + 84 * u, y + 64 * u, 40 * u, dark, true, Paint.Align.LEFT);
-            text(c, names[t], bx + 18 * u, y + 96 * u, 17 * u, dark, true, Paint.Align.LEFT);
-            text(c, onWay[t] + " unterwegs", bx + 18 * u, y + 113 * u, 14 * u, 0xFF6D5A44, false, Paint.Align.LEFT);
+        float x = r.left + 26 * u, y = r.top + 78 * u, in = r.width() - 52 * u;
+        String[] groups = {"Baustoffe", "Nahrung", "Bergbau & Metall", "Werkzeug"};
+        int[][] gw = {{0, 1, 2}, {3, 4, 5, 6, 7, 8, 9}, {10, 11, 12, 13}, {14, 15, 16, 17, 18, 19, 20, 21, 22, 23}};
+        float cw = in / 10f, ch = 74 * u;
+        float gx = x;
+        // erste Zeile: Baustoffe + Bergbau, zweite: Nahrung, dritte: Werkzeug
+        int[][] layout = {{0, 2}, {1}, {3}};
+        for (int[] row : layout) {
+            gx = x;
+            for (int gi : row) {
+                text(c, groups[gi], gx, y, 17 * u, 0xFF8D6E4A, true, Paint.Align.LEFT);
+                for (int k = 0; k < gw[gi].length; k++) {
+                    int t = gw[gi][k];
+                    float bx = gx + k * cw;
+                    RectF cell = rect(bx, y + 8 * u, bx + cw - 6 * u, y + 8 * u + ch);
+                    box(c, cell, 0xFFF7EEDA, 10 * u);
+                    c.save();
+                    c.translate(bx + cw / 2 - 3 * u, y + 34 * u);
+                    c.scale(3f * u, 3f * u);
+                    ren.ware(c, t, 0, 0, 1f);
+                    c.restore();
+                    int val = w.stockTotal(me, t);
+                    text(c, String.valueOf(val), bx + cw / 2 - 3 * u, y + 64 * u, 18 * u, val == 0 ? 0xFFB0A288 : dark, true, Paint.Align.CENTER);
+                    text(c, World.WARE_NAMES[t], bx + cw / 2 - 3 * u, y + 78 * u, 10.5f * u, 0xFF6D5A44, false, Paint.Align.CENTER);
+                    if (onWay[t] > 0) text(c, "+" + onWay[t], bx + cw - 10 * u, y + 24 * u, 11 * u, 0xFF2E7D32, true, Paint.Align.RIGHT);
+                }
+                gx += gw[gi].length * cw + 24 * u;
+            }
+            y += ch + 40 * u;
         }
-        y += 160 * u;
-        text(c, "Leute", x, y, 21 * u, 0xFF8D6E4A, true, Paint.Align.LEFT);
-        y += 34 * u;
+        text(c, "Leute", x, y, 17 * u, 0xFF8D6E4A, true, Paint.Align.LEFT);
+        y += 26 * u;
         String[][] rows = {
-                {"Freie Siedler im Hauptquartier", w.pool(me) + " / " + World.POOL_MAX},
-                {"Träger auf den Wegen", String.valueOf(carriers)},
-                {"Bauarbeiter", String.valueOf(builders)},
+                {"Freie Siedler", w.pool(me) + " / " + World.POOL_MAX},
+                {"Träger", String.valueOf(carriers)},
+                {"Bauarbeiter unterwegs", String.valueOf(builders)},
                 {"Arbeiter in Gebäuden", String.valueOf(workers)},
                 {"Soldaten im Hauptquartier", String.valueOf(w.soldiers(me))},
                 {"Soldaten in Wachgebäuden", String.valueOf(soldiersOut)}};
-        float colW = (r.width() - 60 * u) / 2;
+        float colW = in / 3;
         for (int i = 0; i < rows.length; i++) {
-            float rx = x + (i % 2) * colW, ry = y + (i / 2) * 34 * u;
-            text(c, rows[i][0], rx, ry, 17 * u, dark, false, Paint.Align.LEFT);
-            text(c, rows[i][1], rx + colW - 30 * u, ry, 19 * u, dark, true, Paint.Align.RIGHT);
+            float rx = x + (i % 3) * colW, ry = y + (i / 3) * 28 * u;
+            text(c, rows[i][0], rx, ry, 15 * u, dark, false, Paint.Align.LEFT);
+            text(c, rows[i][1], rx + colW - 24 * u, ry, 16 * u, dark, true, Paint.Align.RIGHT);
         }
-        y += 3 * 34 * u + 20 * u;
-        text(c, "Gebäude", x, y, 21 * u, 0xFF8D6E4A, true, Paint.Align.LEFT);
-        y += 34 * u;
-        int[] types = {World.B_WOOD, World.B_FOREST, World.B_QUARRY, World.B_SAW, World.B_GUARD, World.B_TOWER};
-        for (int i = 0; i < types.length; i++) {
-            int tt = types[i];
-            int done = w.countBuildings(tt, true, me), all = w.countBuildings(tt, false, me);
-            float rx = x + (i % 2) * colW, ry = y + (i / 2) * 34 * u;
-            text(c, World.B_NAMES[tt], rx, ry, 17 * u, dark, false, Paint.Align.LEFT);
-            text(c, done + (all > done ? "  (+" + (all - done) + " im Bau)" : ""), rx + colW - 30 * u, ry, 17 * u, dark, true, Paint.Align.RIGHT);
+        y += 2 * 28 * u + 6 * u;
+        StringBuilder sb = new StringBuilder();
+        int[] pf = w.profs(me);
+        for (int j = 0; j < World.NJ; j++)
+            if (pf[j] > 0) {
+                if (sb.length() > 0) sb.append(", ");
+                sb.append(pf[j]).append(' ').append(World.J_NAMES[j]);
+            }
+        wrap(c, "Warten ausgebildet im Hauptquartier: " + (sb.length() == 0 ? "niemand" : sb.toString()) + ". Das grüne +Zahl ist unterwegs auf den Wegen.",
+                x, y, in, 14 * u, 0xFF6D5A44);
+    }
+
+    // ---------- Werkzeug ----------
+
+    private void toolsWin(Canvas c, int vw, int vh) {
+        RectF r = window(c, vw, vh, 980 * u, 640 * u, "Werkzeug");
+        int dark = 0xFF3B2A1A;
+        float x = r.left + 28 * u, y = r.top + 80 * u, in = r.width() - 56 * u;
+        y = wrap(c, "Der Werkzeugmacher macht immer zuerst, worauf gerade ein Gebäude wartet. Sonst richtet er sich nach dem Vorrang: 0 = gar nicht, 10 = ganz oft.",
+                x, y, in, 16 * u, 0xFF6D5A44) + 6 * u;
+        int[] pr = w.toolPrio(me);
+        World.Building h = w.hqB(me);
+        float colW = (in - 20 * u) / 2, rh = 82 * u;
+        int[] users = {World.J_WOODCUTTER, World.J_SAWYER, World.J_MASON, World.J_BUILDER, World.J_FORESTER, World.J_FISHER, World.J_FARMER, World.J_HUNTER, World.J_BUTCHER, World.J_BAKER};
+        for (int i = 0; i < World.NTOOLS; i++) {
+            final int ti = i;
+            int t = World.FIRST_TOOL + i;
+            float rx = x + (i % 2) * (colW + 20 * u), ry = y + (i / 2) * rh;
+            box(c, rect(rx, ry, rx + colW, ry + rh - 8 * u), 0xFFF7EEDA, 12 * u);
+            c.save();
+            c.translate(rx + 36 * u, ry + 37 * u);
+            c.scale(4f * u, 4f * u);
+            ren.ware(c, t, 0, 0, 1f);
+            c.restore();
+            boolean waiting = false;
+            for (World.Building b : w.buildings.values()) if (b.player == me && b.toolWait == t) waiting = true;
+            if (waiting) {
+                p.setStyle(Paint.Style.STROKE);
+                p.setStrokeWidth(3 * u);
+                p.setColor(0xFFC62828);
+                c.drawRoundRect(rect(rx, ry, rx + colW, ry + rh - 8 * u), 12 * u, 12 * u, p);
+                p.setStyle(Paint.Style.FILL);
+            }
+            text(c, World.WARE_NAMES[t] + "  ·  " + h.stock[t] + " da", rx + 70 * u, ry + 28 * u, 17 * u, dark, true, Paint.Align.LEFT);
+            text(c, waiting ? "Wird gerade gebraucht!" : "für " + J_FOR_TOOL(i, users), rx + 70 * u, ry + 50 * u, 12.5f * u,
+                    waiting ? 0xFFC62828 : 0xFF6D5A44, waiting, Paint.Align.LEFT);
+            float bx = rx + colW - 204 * u;
+            button(c, bx, ry + 14 * u, 46 * u, 46 * u, "–", 0xFF8D6E4A, true, () -> host.exec(new int[]{World.C_TOOLPRIO, me, ti, pr[ti] - 1}));
+            box(c, rect(bx + 54 * u, ry + 18 * u, bx + 142 * u, ry + 56 * u), 0xFFE0D2B4, 8 * u);
+            text(c, String.valueOf(pr[i]), bx + 98 * u, ry + 45 * u, 22 * u, pr[i] == 0 ? 0xFFB0A288 : dark, true, Paint.Align.CENTER);
+            button(c, bx + 150 * u, ry + 14 * u, 46 * u, 46 * u, "+", 0xFF8D6E4A, true, () -> host.exec(new int[]{World.C_TOOLPRIO, me, ti, pr[ti] + 1}));
         }
+    }
+
+    private String J_FOR_TOOL(int i, int[] users) {
+        String who = World.J_NAMES[users[i]];
+        if (i == World.T_PICK - World.FIRST_TOOL) who = "Steinmetz, Bergmann";
+        if (i == World.T_HAMMER - World.FIRST_TOOL) who = "Bauarbeiter, Geologe";
+        return who;
     }
 
     private void stats(Canvas c, int vw, int vh) {

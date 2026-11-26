@@ -35,3 +35,11 @@ Ein Aufbauspiel für Android-Tablets im Stil der alten Siedler-Klassiker – mit
 - Wege und leere Fahnen ohne Rückfrage abreißen
 - Spielstände löschen, Rückfrage vor dem Überschreiben
 - Alle 20 Sekunden ein neuer Siedler, bis 67 („Six-seven!“)
+
+## Stufe 2
+- Nahrung: Fischer, Jäger (Rehe und Hasen laufen frei herum), Brunnen, Bauernhof mit Feldern, Mühle, Bäckerei, Schweinezucht, Metzgerei
+- Bergbau: Kohle-, Eisen-, Gold- und Granitmine; Minen brauchen Nahrung
+- Geologe (an einer Fahne „Geologen schicken“) stellt Schilder mit Bodenschätzen auf
+- Späherhütte: der Späher erkundet den Nebel
+- Eisenschmelze und Werkzeugmacher; jeder Beruf braucht sein Werkzeug, Vorrang im Werkzeug-Fenster einstellbar
+- Lagerhaus, „Zuerst bauen“ für Baustellen, Bau-Menü mit Reitern, großes Lager-Fenster

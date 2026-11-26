@@ -9,7 +9,8 @@ public final class Synth {
     // gleiche Nummern wie die Ereignisse in World
     public static final int S_CHOP = 1, S_CLINK = 2, S_DIG = 3, S_HAMMER = 4, S_SAW = 5, S_TREEFALL = 6, S_DONE = 7,
             S_LAND = 8, S_DROP = 9, S_PAVE = 10, S_CLICK = 11, S_PLACE = 12, S_ERROR = 13,
-            S_BIRD1 = 14, S_BIRD2 = 15, S_BIRD3 = 16, S_WIND = 17, S_WATER = 18, S_MSG = 19, COUNT = 20;
+            S_BIRD1 = 14, S_BIRD2 = 15, S_BIRD3 = 16, S_WIND = 17, S_WATER = 18, S_MSG = 19,
+            S_SPLASH = 20, S_BOW = 21, S_SWISH = 22, S_OINK = 23, COUNT = 24;
 
     private Synth() {
     }
@@ -280,6 +281,58 @@ public final class Synth {
                     float f = t < 0.12f ? 880 : 1174.66f;
                     a[i] = (float) Math.sin(2 * Math.PI * f * t) * env(t < 0.12f ? t : t - 0.12f, 0.005f, 0.12f) * 0.3f;
                 }
+                break;
+            }
+            case S_SPLASH: { // Angel ins Wasser: Platschen
+                a = buf(0.45f);
+                float[] n = noise(0.45f, r);
+                lowpass(n, 0.3f);
+                for (int i = 0; i < a.length; i++) {
+                    float t = i / (float) RATE;
+                    a[i] = n[i] * env(t, 0.003f, 0.07f) * 1.1f
+                            + (float) Math.sin(2 * Math.PI * (600 + 900 * t) * t) * env(t, 0.02f, 0.06f) * 0.25f;
+                }
+                break;
+            }
+            case S_BOW: { // Bogensehne
+                a = buf(0.4f);
+                float[] n = noise(0.4f, r);
+                highpass(n, 0.2f);
+                for (int i = 0; i < a.length; i++) {
+                    float t = i / (float) RATE;
+                    float f = 190 * (1 + 0.04f * (float) Math.sin(t * 90));
+                    a[i] = (float) Math.sin(2 * Math.PI * f * t) * env(t, 0.002f, 0.09f) * 0.7f
+                            + n[i] * env(t, 0.01f, 0.08f) * 0.35f;
+                }
+                break;
+            }
+            case S_SWISH: { // Sense: Rauschen, das vorbeizieht
+                a = buf(0.3f);
+                float[] n = noise(0.3f, r);
+                highpass(n, 0.35f);
+                lowpass(n, 0.5f);
+                for (int i = 0; i < a.length; i++) {
+                    float t = i / (0.3f * RATE);
+                    a[i] = n[i] * (float) Math.pow(Math.sin(Math.PI * t), 2) * 1.6f;
+                }
+                break;
+            }
+            case S_OINK: { // Schwein grunzt
+                a = buf(0.5f);
+                float ph = 0;
+                for (int k = 0; k < 2; k++) {
+                    int at = (int) (k * 0.22f * RATE);
+                    for (int i = 0; i < 0.18f * RATE && at + i < a.length; i++) {
+                        float t = i / (float) RATE;
+                        float f = 110 + 40 * (float) Math.sin(t * 25);
+                        ph += f / RATE;
+                        float saw = (ph % 1f) * 2 - 1;
+                        float am = 0.6f + 0.4f * (float) Math.sin(2 * Math.PI * 28 * t);
+                        a[at + i] += saw * am * (float) Math.sin(Math.PI * t / 0.18f) * 0.5f;
+                    }
+                }
+                lowpass(a, 0.25f);
+                for (int i = 0; i < a.length; i++) a[i] *= 2f;
                 break;
             }
             default:

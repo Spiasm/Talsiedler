@@ -1,7 +1,14 @@
 package de.spiasm.talsiedler;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothManager;
+import android.content.Context;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 import android.view.WindowManager;
@@ -14,13 +21,27 @@ import java.io.FileOutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.Locale;
 
-public class MainActivity extends Activity implements Hud.Host {
+@SuppressLint("MissingPermission")
+public class MainActivity extends Activity implements Hud.Host, BtLink.Listener {
+    private static final String PERM_CONNECT = "android.permission.BLUETOOTH_CONNECT";
+    private static final int REQ_PERM = 7;
+
     private GameView view;
     private Sound sound;
     private SharedPreferences prefs;
+    private final Session session = new Session(null);
+    private BtLink link;
+    private int mpState;
+    private String mpText;
+    private boolean asked;
+    private final ArrayList<BluetoothDevice> devices = new ArrayList<>();
+    // was nach dem Verbinden gestartet werden soll (Gastgeber)
+    private int hostMode, hostGoalType, hostGoalValue;
+    private boolean joining;
 
     @Override
     protected void onCreate(Bundle b) {
@@ -29,11 +50,14 @@ public class MainActivity extends Activity implements Hud.Host {
         prefs = getSharedPreferences("talsiedler", MODE_PRIVATE);
         sound = new Sound(this);
         view = new GameView(this, this);
+        view.session = session;
         view.hud.fxVol = prefs.getInt("fx", 7);
         view.hud.ambVol = prefs.getInt("amb", 5);
         sound.setVolumes(view.hud.fxVol, view.hud.ambVol);
         World w = read(file());
         if (w == null) w = new World(System.currentTimeMillis());
+        w.mode = 0;
+        session.w = w;
         view.setWorld(w);
         setContentView(view);
         hideBars();
@@ -67,8 +91,11 @@ public class MainActivity extends Activity implements Hud.Host {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (link != null) link.close();
         sound.release();
     }
+
+    // ---------------- Speichern ----------------
 
     private File file() {
         return new File(getFilesDir(), "spielstand.dat");
@@ -99,15 +126,21 @@ public class MainActivity extends Activity implements Hud.Host {
         return tmp.renameTo(target);
     }
 
+    /** Das eigene Spiel speichern – aber nie ein fremdes oder ein Wettbau-Spiel über das eigene. */
     @Override
     public void save() {
         World w = view.world();
-        if (w != null) write(w, file());
+        if (w == null) return;
+        if (session.role == Session.GUEST) return;
+        if (w.players > 1) return;
+        write(w, file());
     }
 
     @Override
     public void newGame() {
-        view.setWorld(new World(System.currentTimeMillis()));
+        World w = new World(System.currentTimeMillis());
+        session.w = w;
+        view.setWorld(w);
         save();
     }
 
@@ -120,19 +153,24 @@ public class MainActivity extends Activity implements Hud.Host {
     public void saveSlot(int i) {
         World w = view.world();
         if (w == null || !write(w, slotFile(i))) return;
-        int land = 0;
-        for (boolean o : w.owned) if (o) land++;
+        int land = w.landCount[view.hud.me];
         int mins = (int) (w.time / 60);
         String info = new SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.GERMANY).format(new Date())
                 + "  ·  Spielzeit " + (mins / 60) + ":" + String.format(Locale.GERMANY, "%02d", mins % 60) + " h"
-                + "  ·  " + (w.buildings.size() - 1) + " Gebäude  ·  Land " + land;
+                + "  ·  " + w.countBuildings(World.B_WOOD, true, view.hud.me) + " Holzfäller  ·  Land " + land
+                + (w.players > 1 ? "  ·  Wettbauen" : "");
         prefs.edit().putString("slot" + i, info).apply();
     }
 
     @Override
     public boolean loadSlot(int i) {
+        if (session.role != Session.SOLO) return false;
         World w = read(slotFile(i));
         if (w == null) return false;
+        if (w.players > 1) w.mode = 2;
+        else w.mode = 0;
+        session.w = w;
+        view.hud.me = 0;
         view.setWorld(w);
         save();
         return true;
@@ -145,6 +183,13 @@ public class MainActivity extends Activity implements Hud.Host {
     }
 
     @Override
+    public void deleteSlot(int i) {
+        //noinspection ResultOfMethodCallIgnored
+        slotFile(i).delete();
+        prefs.edit().remove("slot" + i).apply();
+    }
+
+    @Override
     public void volumes(int fx, int amb) {
         sound.setVolumes(fx, amb);
         prefs.edit().putInt("fx", fx).putInt("amb", amb).apply();
@@ -153,5 +198,191 @@ public class MainActivity extends Activity implements Hud.Host {
     @Override
     public void frame(World w, Renderer r, float dt, boolean paused) {
         sound.frame(w, r, dt, paused);
+    }
+
+    @Override
+    public void exec(int[] cmd) {
+        if (session.role == Session.SOLO) session.w = view.world();
+        session.local(cmd);
+    }
+
+    @Override
+    public int role() {
+        return session.role;
+    }
+
+    // ---------------- Bluetooth ----------------
+
+    private BluetoothAdapter adapter() {
+        BluetoothManager bm = (BluetoothManager) getSystemService(Context.BLUETOOTH_SERVICE);
+        return bm == null ? null : bm.getAdapter();
+    }
+
+    private boolean allowed() {
+        if (Build.VERSION.SDK_INT < 31) return true;
+        if (checkSelfPermission(PERM_CONNECT) == PackageManager.PERMISSION_GRANTED) return true;
+        if (!asked) {
+            asked = true;
+            requestPermissions(new String[]{PERM_CONNECT}, REQ_PERM);
+        }
+        return false;
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int code, String[] perms, int[] results) {
+        super.onRequestPermissionsResult(code, perms, results);
+        if (code == REQ_PERM && (results.length == 0 || results[0] != PackageManager.PERMISSION_GRANTED))
+            mpText = "Ohne Erlaubnis für „Geräte in der Nähe“ geht Bluetooth nicht. Bitte in den Einstellungen der App erlauben.";
+    }
+
+    @Override
+    public int mpState() {
+        return mpState;
+    }
+
+    @Override
+    public String mpText() {
+        return mpText;
+    }
+
+    @Override
+    public String[] mpDevices() {
+        BluetoothAdapter a = adapter();
+        if (a == null || !allowed()) return null;
+        try {
+            if (!a.isEnabled()) return null;
+            devices.clear();
+            devices.addAll(a.getBondedDevices());
+            String[] names = new String[devices.size()];
+            for (int i = 0; i < names.length; i++) {
+                String n = devices.get(i).getName();
+                names[i] = n == null ? devices.get(i).getAddress() : n;
+            }
+            return names;
+        } catch (SecurityException e) {
+            return null;
+        }
+    }
+
+    @Override
+    public void mpHost(int mode, int goalType, int goalValue) {
+        BluetoothAdapter a = adapter();
+        if (a == null || !allowed()) {
+            mpText = "Bluetooth ist nicht bereit.";
+            return;
+        }
+        hostMode = mode;
+        hostGoalType = goalType;
+        hostGoalValue = goalValue;
+        joining = false;
+        if (link != null) link.close();
+        link = new BtLink(this);
+        link.host(a);
+        mpState = 1;
+        mpText = "Warte auf den Mitspieler … Auf dem anderen Tablet jetzt „2 Spieler“ öffnen und dieses Tablet antippen.";
+    }
+
+    @Override
+    public void mpJoin(int index) {
+        BluetoothAdapter a = adapter();
+        if (a == null || index < 0 || index >= devices.size() || !allowed()) return;
+        joining = true;
+        if (link != null) link.close();
+        link = new BtLink(this);
+        link.join(devices.get(index), a);
+        mpState = 2;
+        mpText = "Verbinde mit " + mpDevicesName(index) + " …";
+    }
+
+    private String mpDevicesName(int i) {
+        try {
+            String n = devices.get(i).getName();
+            return n == null ? "dem Tablet" : n;
+        } catch (SecurityException e) {
+            return "dem Tablet";
+        }
+    }
+
+    @Override
+    public void mpLeave() {
+        if (link != null) link.close();
+        link = null;
+        endSession("Verbindung getrennt.");
+    }
+
+    @Override
+    public void onConnected(String peerName) {
+        mpState = 3;
+        if (!joining) {
+            // Gastgeber: Spiel festlegen und an den Gast schicken
+            World w;
+            if (hostMode == 2) {
+                save();
+                w = new World(System.currentTimeMillis(), 2, 2);
+                w.goalType = hostGoalType;
+                w.goalValue = hostGoalValue;
+                view.hud.me = 0;
+                session.w = w;
+                view.setWorld(w);
+            } else {
+                w = view.world();
+                w.mode = 1;
+            }
+            session.startHost(w, line -> {
+                BtLink l = link;
+                if (l != null) l.send(line);
+            });
+            mpText = "Verbunden mit " + peerName + ". Viel Spaß!";
+        } else {
+            save();
+            session.startGuest(line -> {
+                BtLink l = link;
+                if (l != null) l.send(line);
+            }, (nw, first) -> {
+                view.hud.me = session.me;
+                view.ren.me = session.me;
+                if (first) {
+                    view.setWorld(nw);
+                    view.centerOnMine();
+                } else view.replaceWorld(nw);
+            });
+            mpText = "Verbunden mit " + peerName + ". Das Spiel wird geladen …";
+        }
+        view.hud.say("Verbunden mit " + peerName + ".");
+    }
+
+    @Override
+    public void onMessage(String line) {
+        session.onMessage(line);
+        if (session.role == Session.GUEST && session.ready() && mpText != null && mpText.endsWith("geladen …"))
+            mpText = "Verbunden. Viel Spaß!";
+    }
+
+    @Override
+    public void onClosed(String reason) {
+        link = null;
+        endSession(reason);
+    }
+
+    private void endSession(String reason) {
+        int role = session.role;
+        World w = view.world();
+        session.stop();
+        mpState = 0;
+        mpText = role == Session.SOLO ? null : reason;
+        view.hud.me = 0;
+        view.ren.me = 0;
+        if (role == Session.GUEST || (w != null && w.players > 1)) {
+            // zurück zum eigenen Spiel
+            World own = read(file());
+            if (own == null) own = new World(System.currentTimeMillis());
+            own.mode = 0;
+            session.w = own;
+            view.setWorld(own);
+        } else if (w != null) {
+            w.mode = 0;
+            session.w = w;
+        }
+        if (role != Session.SOLO) view.hud.say(reason + " Du spielst wieder dein eigenes Spiel.");
     }
 }

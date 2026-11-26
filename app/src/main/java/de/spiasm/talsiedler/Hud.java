@@ -25,10 +25,33 @@ public class Hud {
         void volumes(int fx, int amb);
 
         void frame(World w, Renderer r, float dt, boolean paused);
+
+        /** Befehl ausführen (allein sofort, zu zweit über den Gleichlauf) */
+        void exec(int[] cmd);
+
+        void deleteSlot(int i);
+
+        /** 0 = allein, 1 = Gastgeber, 2 = Gast */
+        int role();
+
+        /** 0 = nichts, 1 = wartet auf Mitspieler, 2 = verbindet, 3 = verbunden */
+        int mpState();
+
+        String mpText();
+
+        /** gekoppelte Bluetooth-Geräte, null wenn Bluetooth aus oder keine Erlaubnis */
+        String[] mpDevices();
+
+        void mpHost(int mode, int goalType, int goalValue);
+
+        void mpJoin(int index);
+
+        void mpLeave();
     }
 
     /** Neue Welt übernommen (neues Spiel oder geladen). */
     public void reset() {
+        pendBuild = pendFlag = pendRoadEnd = -1;
         lastMsgCount = -1;
         live.clear();
         liveUntil.clear();
@@ -36,7 +59,12 @@ public class Hud {
         panelNode = -1;
     }
 
-    static final int WIN_NONE = 0, WIN_STORE = 1, WIN_STATS = 2, WIN_MSGS = 3, WIN_SLOTS = 4, WIN_SOUND = 5;
+    static final int WIN_NONE = 0, WIN_STORE = 1, WIN_STATS = 2, WIN_MSGS = 3, WIN_SLOTS = 4, WIN_SOUND = 5, WIN_MP = 6;
+    /** eigener Spieler */
+    public int me;
+    private int pendBuild = -1, pendFlag = -1, pendRoadEnd = -1, confirmSlot, confirmSlotKind;
+    private float pendT;
+    private int winnerSeen;
 
     static class Btn {
         final RectF r;
@@ -190,19 +218,50 @@ public class Hud {
         }
         int end = pth[pth.length - 1];
         boolean existing = w.obj[end] == World.O_FLAG;
-        if (!w.buildRoad(pth)) {
-            err("Weg konnte nicht gebaut werden.");
-            return;
-        }
+        World.Flag ef0 = w.flagAt(end);
+        boolean linked = existing && ef0 != null && w.connected(ef0.id, w.hqB(me).flag);
+        host.exec(new int[]{World.C_ROAD, me, ren.roadFrom, n});
         host.play(Synth.S_PLACE);
-        World.Flag ef = w.flagAt(end);
-        boolean linked = existing && w.connected(ef.id, w.hqB().flag);
-        if (existing || ef == null) {
-            ren.roadFrom = -1;
+        ren.roadFrom = -1;
+        if (existing) {
             say(linked ? "Weg gebaut – jetzt kommt ein Träger." : "Weg gebaut.");
         } else {
-            ren.roadFrom = ef.id;
+            pendRoadEnd = end;
+            pendT = now;
             say("Weg gebaut. Weiter antippen oder „Fertig“.");
+        }
+        resolvePending();
+    }
+
+    /** Wartende Aktionen (z. B. Weg weiterbauen) übernehmen, sobald die Welt sie zeigt. */
+    private void resolvePending() {
+        if (now - pendT > 4f) pendBuild = pendFlag = pendRoadEnd = -1;
+        if (pendRoadEnd >= 0) {
+            World.Flag f = w.flagAt(pendRoadEnd);
+            if (f != null && f.player == me) {
+                ren.roadFrom = f.id;
+                pendRoadEnd = -1;
+            }
+        }
+        if (pendFlag >= 0) {
+            World.Flag f = w.flagAt(pendFlag);
+            if (f != null && f.player == me) {
+                startRoad(f.id);
+                pendFlag = -1;
+            }
+        }
+        if (pendBuild >= 0) {
+            World.Building b = w.buildingAt(pendBuild);
+            if (b != null && b.player == me) {
+                World.Flag nf = w.flags.get(b.flag);
+                int roadsAt = 0;
+                for (int rid : nf.road) if (rid >= 0) roadsAt++;
+                if (roadsAt == 0) {
+                    startRoad(b.flag);
+                    say("Baustelle gesetzt. Jetzt einen Weg bauen: tippe eine Fahne an.");
+                } else say("Baustelle gesetzt.");
+                pendBuild = -1;
+            }
         }
     }
 
@@ -268,16 +327,22 @@ public class Hud {
             intro(c, vw, vh);
             return;
         }
-        if (lastMsgCount < 0) lastMsgCount = w.msgCount;
+        ren.me = me;
+        resolvePending();
+        if (lastMsgCount < 0 || lastMsgCount > w.msgCount) lastMsgCount = w.msgCount;
         if (w.msgCount != lastMsgCount) {
             int add = Math.min(w.msgCount - lastMsgCount, w.msgs.size());
+            boolean any = false;
             for (int i = w.msgs.size() - add; i < w.msgs.size(); i++) {
                 if (i < 0) continue;
-                live.add(w.msgs.get(i));
+                World.Msg m = w.msgs.get(i);
+                if (!mine(m)) continue;
+                live.add(m);
                 liveUntil.add(now + 9f);
+                any = true;
             }
             lastMsgCount = w.msgCount;
-            host.play(Synth.S_MSG);
+            if (any) host.play(Synth.S_MSG);
         }
         while (!live.isEmpty() && (liveUntil.get(0) < now || live.size() > 3)) {
             live.remove(0);
@@ -297,6 +362,8 @@ public class Hud {
             box(c, r, 0xE0201A14, 12 * u);
             text(c, toast, vw / 2f, vh - 61 * u, 20 * u, 0xFFFFF3C4, false, Paint.Align.CENTER);
         }
+        if (w.mode == 2) raceBar(c, vw);
+        if (w.winner > 0 && w.winner != winnerSeen && win == WIN_NONE && !menu && !help) winner(c, vw, vh);
         if (menu) menu(c, vw, vh);
         if (help) help(c, vw, vh);
         if (win == WIN_STORE) store(c, vw, vh);
@@ -304,6 +371,11 @@ public class Hud {
         if (win == WIN_MSGS) msgWindow(c, vw, vh);
         if (win == WIN_SLOTS) slots(c, vw, vh);
         if (win == WIN_SOUND) soundWin(c, vw, vh);
+        if (win == WIN_MP) mpWin(c, vw, vh);
+    }
+
+    private boolean mine(World.Msg m) {
+        return m.player < 0 || m.player == me || w.mode == 1;
     }
 
     private void topBar(Canvas c, int vw) {
@@ -311,7 +383,7 @@ public class Hud {
         box(c, rect(0, 0, vw, h), 0xE8302318, 0);
         p.setColor(0xFF6B4E2E);
         c.drawRect(0, h - 3 * u, vw, h, p);
-        World.Building hq = w.hqB();
+        World.Building hq = w.hqB(me);
         float x = 18 * u;
         btns.add(new Btn(rect(0, 0, 560 * u, h), () -> { win = WIN_STORE; }, "Lager"));
         for (int t = 0; t < World.NWARES; t++) {
@@ -325,20 +397,21 @@ public class Hud {
             x += 106 * u;
         }
         person(c, x + 12 * u, h / 2 + 16 * u, 0xFFD84315, 2.2f * u, false);
-        text(c, String.valueOf(w.pool), x + 30 * u, h / 2 + 8 * u, 24 * u, 0xFFFFFFFF, true, Paint.Align.LEFT);
+        text(c, String.valueOf(w.pool(me)), x + 30 * u, h / 2 + 8 * u, 24 * u, 0xFFFFFFFF, true, Paint.Align.LEFT);
         text(c, "Siedler", x + 30 * u, h / 2 + 24 * u, 11 * u, 0xFFCDBB9A, false, Paint.Align.LEFT);
         x += 100 * u;
         person(c, x + 12 * u, h / 2 + 16 * u, 0xFF1E5BC6, 2.2f * u, true);
-        text(c, String.valueOf(w.soldiers), x + 30 * u, h / 2 + 8 * u, 24 * u, 0xFFFFFFFF, true, Paint.Align.LEFT);
+        text(c, String.valueOf(w.soldiers(me)), x + 30 * u, h / 2 + 8 * u, 24 * u, 0xFFFFFFFF, true, Paint.Align.LEFT);
         text(c, "Soldaten", x + 30 * u, h / 2 + 24 * u, 11 * u, 0xFFCDBB9A, false, Paint.Align.LEFT);
 
         float bw = 112 * u, bh = 44 * u, bt = 8 * u;
         float r = vw - 12 * u - 90 * u;
         button(c, r, bt, 90 * u, bh, "Menü", 0xFF6D4C41, true, () -> { menu = true; confirmNew = false; });
         r -= bw + 8 * u;
-        button(c, r, bt, bw, bh, paused ? "Weiter" : "Pause", paused ? 0xFFC62828 : 0xFF5D6B3A, true, () -> paused = !paused);
+        boolean guest = host.role() == 2;
+        button(c, r, bt, bw, bh, paused ? "Weiter" : "Pause", paused ? 0xFFC62828 : 0xFF5D6B3A, !guest, () -> paused = !paused);
         r -= bw + 8 * u;
-        button(c, r, bt, bw, bh, "Tempo x" + speed, 0xFF5D6B3A, true, () -> speed = speed == 1 ? 2 : speed == 2 ? 4 : 1);
+        button(c, r, bt, bw, bh, guest ? "Gast" : "Tempo x" + speed, 0xFF5D6B3A, !guest, () -> speed = speed == 1 ? 2 : speed == 2 ? 4 : 1);
         r -= bw + 22 * u + 8 * u;
         button(c, r, bt, bw + 22 * u, bh, "Bauplätze", ren.showSpots ? 0xFFEF8F00 : 0xFF5D6B3A, true,
                 () -> ren.showSpots = !ren.showSpots);
@@ -399,17 +472,17 @@ public class Hud {
 
     private String tip() {
         for (World.Building b : w.buildings.values())
-            if (b.status.startsWith("Kein Weg"))
+            if (b.player == me && b.status.startsWith("Kein Weg"))
                 return "Ein Gebäude hat keinen Weg zum Hauptquartier. Tippe seine Fahne an, dann „Weg bauen“.";
-        if (w.countBuildings(World.B_WOOD, false) == 0)
+        if (w.countBuildings(World.B_WOOD, false, me) == 0)
             return "Tippe auf freies Land in der Nähe von Bäumen und baue einen Holzfäller. Gelbe Häuschen zeigen Bauplätze („Bauplätze“ oben).";
-        if (w.countBuildings(World.B_QUARRY, false) == 0)
+        if (w.countBuildings(World.B_QUARRY, false, me) == 0)
             return "Baue einen Steinbruch neben grauen Steinen.";
-        if (w.countBuildings(World.B_SAW, false) == 0)
+        if (w.countBuildings(World.B_SAW, false, me) == 0)
             return "Ein Sägewerk macht aus Baumstämmen Bretter. Es braucht einen großen Bauplatz (orange).";
-        if (w.countBuildings(World.B_FOREST, false) == 0)
+        if (w.countBuildings(World.B_FOREST, false, me) == 0)
             return "Ein Förster pflanzt neue Bäume, damit dem Holzfäller das Holz nicht ausgeht.";
-        if (w.countBuildings(World.B_GUARD, false) + w.countBuildings(World.B_TOWER, false) == 0)
+        if (w.countBuildings(World.B_GUARD, false, me) + w.countBuildings(World.B_TOWER, false, me) == 0)
             return "Baue eine Wachstube nahe der blauen Grenze. Sobald ein Soldat drin ist, wird dein Land größer.";
         return null;
     }
@@ -434,16 +507,24 @@ public class Hud {
         World.Flag f = w.flagAt(n);
         World.Road road = w.roadAt(n);
         int dark = 0xFF3B2A1A;
+        int ownerOf = b != null ? b.player : f != null ? f.player : road != null ? road.player : me;
+        if (ownerOf != me) {
+            String what = b != null ? World.B_NAMES[b.type] : f != null ? "Fahne" : "Weg";
+            text(c, what, x, y, 24 * u, dark, true, Paint.Align.LEFT);
+            wrap(c, "Gehört Spieler " + World.P_NAMES[ownerOf] + ". Hier kannst du nichts ändern.", x, y + 34 * u, in, 18 * u, World.P_COLORS[ownerOf]);
+            return;
+        }
         if (b != null) {
             text(c, World.B_NAMES[b.type] + (b.done ? "" : " (Baustelle)"), x, y, 24 * u, dark, true, Paint.Align.LEFT);
             y += 14 * u;
             c.save();
             c.translate(x + in / 2, y + 92 * u);
             c.scale(2.6f * u, 2.6f * u);
+            ren.bannerFor(me);
             ren.buildingSprite(c, b.type, 0, 0, now);
             c.restore();
             y += 120 * u;
-            if (b.id != w.hq) y = wrap(c, b.status, x, y, in, 19 * u, 0xFF5D4037) + 6 * u;
+            if (!World.isHq(b)) y = wrap(c, b.status, x, y, in, 19 * u, 0xFF5D4037) + 6 * u;
             if (!b.done) {
                 for (int t = 1; t < World.NWARES; t++) {
                     int need = World.B_COST[b.type][t];
@@ -451,10 +532,10 @@ public class Hud {
                     y = wrap(c, World.WARE_NAMES[t] + (t == 1 ? "er" : "e") + ": " + b.got[t] + " von " + need + " da", x, y, in, 18 * u, dark);
                 }
                 y = wrap(c, "Fortschritt: " + Math.round(b.progress() * 100) + " %", x, y, in, 18 * u, dark);
-            } else if (b.id == w.hq) {
+            } else if (World.isHq(b)) {
                 y = wrap(c, "Lager: " + b.stock[0] + " Stämme, " + b.stock[1] + " Bretter, " + b.stock[2] + " Steine", x, y, in, 18 * u, dark);
-                y = wrap(c, "Freie Siedler: " + w.pool + " (es kommen langsam neue dazu)", x, y, in, 18 * u, dark);
-                y = wrap(c, "Soldaten: " + w.soldiers, x, y, in, 18 * u, dark);
+                y = wrap(c, "Freie Siedler: " + w.pool(me) + " von " + World.POOL_MAX + " (alle 20 Sekunden kommt einer dazu)", x, y, in, 18 * u, dark);
+                y = wrap(c, "Soldaten: " + w.soldiers(me), x, y, in, 18 * u, dark);
             } else {
                 if (b.type < World.B_GUARD)
                     y = wrap(c, "Auslastung: " + Math.round(b.util * 100) + " %" + (b.problem ? " – wartet gerade" : ""), x, y, in, 18 * u,
@@ -466,19 +547,20 @@ public class Hud {
                 if (b.type >= World.B_GUARD) y = wrap(c, b.occupied ? "Besetzt. Hält das Land im Umkreis." : "Wartet auf einen Soldaten.", x, y, in, 18 * u, dark);
             }
             final World.Building fb = b;
-            boolean canStop = b.done && b.id != w.hq && b.type < World.B_GUARD;
+            boolean canStop = b.done && !World.isHq(b) && b.type < World.B_GUARD;
             float by = r.bottom - (canStop ? 190 : 128) * u;
             button(c, x, by, in, 52 * u, "Weg bauen", 0xFF1565C0, true, () -> startRoad(fb.flag));
             if (canStop) {
                 by += 62 * u;
                 button(c, x, by, in, 52 * u, b.stopped ? "Weiter arbeiten" : "Arbeit stoppen", b.stopped ? 0xFF2E7D32 : 0xFF6D4C41, true,
                         () -> {
-                            w.setStopped(fb, !fb.stopped);
-                            say(fb.stopped ? World.B_NAMES[fb.type] + " macht Pause." : World.B_NAMES[fb.type] + " arbeitet wieder.");
+                            boolean stop = !fb.stopped;
+                            host.exec(new int[]{World.C_STOP, me, fb.id, stop ? 1 : 0});
+                            say(stop ? World.B_NAMES[fb.type] + " macht Pause." : World.B_NAMES[fb.type] + " arbeitet wieder.");
                         });
             }
-            if (b.id != w.hq)
-                demolishButton(c, x, by + 62 * u, in, () -> w.removeBuilding(fb));
+            if (!World.isHq(b))
+                demolishButton(c, x, by + 62 * u, in, true, () -> host.exec(new int[]{World.C_REMOVE, me, 0, fb.node}));
         } else if (f != null) {
             text(c, "Fahne", x, y, 24 * u, dark, true, Paint.Align.LEFT);
             y += 22 * u;
@@ -486,12 +568,17 @@ public class Hud {
             int nr = 0;
             for (int rid : f.road) if (rid >= 0) nr++;
             y = wrap(c, "Wege an dieser Fahne: " + nr, x, y, in, 18 * u, dark);
-            if (f.id != w.hqB().flag && !w.connected(f.id, w.hqB().flag))
+            if (f.id != w.hqB(me).flag && !w.connected(f.id, w.hqB(me).flag))
                 y = wrap(c, "Diese Fahne ist noch nicht mit dem Hauptquartier verbunden.", x, y + 6 * u, in, 18 * u, 0xFFC62828);
             float by = r.bottom - 128 * u;
             final World.Flag ff = f;
             button(c, x, by, in, 52 * u, "Weg bauen", 0xFF1565C0, true, () -> startRoad(ff.id));
-            if (f.id != w.hqB().flag) demolishButton(c, x, by + 62 * u, in, () -> w.removeFlag(ff));
+            if (f.id != w.hqB(me).flag) {
+                World.Building fbld = w.buildingAt(World.nb(f.node, 4));
+                boolean withHouse = fbld != null && fbld.flag == f.id;
+                if (withHouse) y = wrap(c, "Achtung: Das Gebäude an dieser Fahne wird mit abgerissen.", x, y + 6 * u, in, 17 * u, 0xFFB71C1C);
+                demolishButton(c, x, by + 62 * u, in, withHouse, () -> host.exec(new int[]{World.C_REMOVE, me, 0, ff.node}));
+            }
         } else if (road != null) {
             text(c, "Weg", x, y, 24 * u, dark, true, Paint.Align.LEFT);
             y += 22 * u;
@@ -504,19 +591,21 @@ public class Hud {
             float by = r.bottom - 128 * u;
             final World.Road rr = road;
             final int node = n;
-            button(c, x, by, in, 52 * u, "Fahne hier setzen", 0xFF1565C0, w.canFlag(n), () -> {
-                if (w.placeFlag(node) != null) say("Fahne gesetzt – der Weg hat jetzt zwei Träger.");
+            button(c, x, by, in, 52 * u, "Fahne hier setzen", 0xFF1565C0, w.canFlag(n, me), () -> {
+                host.exec(new int[]{World.C_FLAG, me, 0, node});
+                host.play(Synth.S_PLACE);
+                say("Fahne gesetzt – der Weg hat jetzt zwei Träger.");
                 select(-1);
             });
-            demolishButton(c, x, by + 62 * u, in, () -> w.removeRoad(rr));
+            demolishButton(c, x, by + 62 * u, in, false, () -> host.exec(new int[]{World.C_REMOVE, me, 0, rr.path[1]}));
         } else {
             buildMenu(c, n, x, y, in, r);
         }
     }
 
-    private void demolishButton(Canvas c, float x, float y, float wd, Runnable act) {
+    private void demolishButton(Canvas c, float x, float y, float wd, boolean ask, Runnable act) {
         button(c, x, y, wd, 52 * u, confirmDemolish ? "Wirklich abreißen?" : "Abreißen", confirmDemolish ? 0xFFB71C1C : 0xFF8D3A2A, true, () -> {
-            if (!confirmDemolish) confirmDemolish = true;
+            if (ask && !confirmDemolish) confirmDemolish = true;
             else {
                 act.run();
                 select(-1);
@@ -527,13 +616,19 @@ public class Hud {
 
     private void buildMenu(Canvas c, int n, float x, float y, float in, RectF r) {
         int dark = 0xFF3B2A1A;
-        if (!w.owned[n]) {
+        if (!w.own(n, me)) {
+            if (w.owner[n] != 0) {
+                int o = w.owner[n] - 1;
+                text(c, "Land von " + World.P_NAMES[o], x, y, 24 * u, World.P_COLORS[o], true, Paint.Align.LEFT);
+                wrap(c, "Hier baut Spieler " + World.P_NAMES[o] + ". Such dir freies Land.", x, y + 34 * u, in, 18 * u, dark);
+                return;
+            }
             text(c, "Fremdes Land", x, y, 24 * u, dark, true, Paint.Align.LEFT);
             wrap(c, "Hier kannst du (noch) nicht bauen. Baue eine Wachstube oder einen Wachturm nahe der Grenze, dann wächst dein Land.", x, y + 34 * u, in, 18 * u, dark);
             return;
         }
-        int size = w.buildSize(n);
-        boolean flagOk = w.canFlag(n);
+        int size = w.buildSize(n, me);
+        boolean flagOk = w.canFlag(n, me);
         text(c, "Bauen", x, y, 24 * u, dark, true, Paint.Align.LEFT);
         y += 14 * u;
         if (size == 0) {
@@ -564,6 +659,7 @@ public class Hud {
                 c.translate(bx + cw / 2, yy + 62 * u);
                 float sc = (type == World.B_TOWER ? 1.25f : 1.6f) * u;
                 c.scale(sc, sc);
+                ren.bannerFor(me);
                 ren.buildingSprite(c, type, 0, 0, now);
                 c.restore();
                 text(c, World.B_NAMES[type], bx + cw / 2, yy + 86 * u, 16 * u, ok ? dark : 0xFF8A7D66, true, Paint.Align.CENTER);
@@ -573,23 +669,16 @@ public class Hud {
                 if (ok) {
                     final int tt = type;
                     btns.add(new Btn(br, () -> {
-                        int id = w.placeBuilding(tt, n);
-                        if (id < 0) {
+                        if (w.buildSize(n, me) < World.B_SIZE[tt]) {
                             err("Hier geht das nicht.");
                             return;
                         }
+                        host.exec(new int[]{World.C_BUILD, me, tt, n});
                         host.play(Synth.S_PLACE);
-                        World.Building nb = w.buildings.get(id);
-                        World.Flag nf = w.flags.get(nb.flag);
-                        int roadsAt = 0;
-                        for (int rid : nf.road) if (rid >= 0) roadsAt++;
-                        if (roadsAt == 0) {
-                            startRoad(nb.flag);
-                            say("Baustelle gesetzt. Jetzt einen Weg bauen: tippe eine Fahne an.");
-                        } else {
-                            select(-1);
-                            say("Baustelle gesetzt.");
-                        }
+                        select(-1);
+                        pendBuild = n;
+                        pendT = now;
+                        resolvePending();
                     }, World.B_NAMES[tt]));
                 }
                 col++;
@@ -602,8 +691,12 @@ public class Hud {
         if (flagOk) {
             float by = Math.max(yy + 6 * u, r.bottom - 66 * u);
             button(c, x, by, in, 52 * u, "Fahne setzen", 0xFF1565C0, true, () -> {
-                World.Flag nf = w.placeFlag(n);
-                if (nf != null) startRoad(nf.id);
+                host.exec(new int[]{World.C_FLAG, me, 0, n});
+                host.play(Synth.S_PLACE);
+                select(-1);
+                pendFlag = n;
+                pendT = now;
+                resolvePending();
                 say("Fahne gesetzt. Tippe eine andere Fahne an, um sie zu verbinden.");
             });
         }
@@ -611,7 +704,7 @@ public class Hud {
 
     private void menu(Canvas c, int vw, int vh) {
         box(c, rect(0, 0, vw, vh), 0x99000000, 0);
-        float mw = 560 * u, mh = 560 * u;
+        float mw = 560 * u, mh = 570 * u;
         RectF r = rect(vw / 2f - mw / 2, vh / 2f - mh / 2, vw / 2f + mw / 2, vh / 2f + mh / 2);
         box(c, r, 0xFFE9DCC0, 18 * u);
         text(c, "Talsiedler", vw / 2f, r.top + 54 * u, 34 * u, 0xFF3B2A1A, true, Paint.Align.CENTER);
@@ -628,9 +721,11 @@ public class Hud {
         button(c, bx2, y0, bw, bh, "Meldungen", 0xFF5D6B3A, true, () -> { win = WIN_MSGS; menu = false; });
         y0 += bh + gap;
         button(c, bx, y0, bw, bh, "Ton", 0xFF5D6B3A, true, () -> { win = WIN_SOUND; menu = false; });
-        button(c, bx2, y0, bw, bh, "Titelbild", 0xFF5D6B3A, true, () -> { intro = true; menu = false; });
+        button(c, bx2, y0, bw, bh, "2 Spieler", 0xFF6A1B9A, true, () -> { win = WIN_MP; menu = false; });
         y0 += bh + gap;
-        button(c, bx, y0, bw * 2 + gap, bh, confirmNew ? "Wirklich neu anfangen?" : "Neues Spiel", confirmNew ? 0xFFB71C1C : 0xFF8D3A2A, true, () -> {
+        button(c, bx, y0, bw, bh, "Titelbild", 0xFF5D6B3A, true, () -> { intro = true; menu = false; });
+        boolean solo = host.role() == 0;
+        button(c, bx2, y0, bw, bh, confirmNew ? "Wirklich?" : "Neues Spiel", confirmNew ? 0xFFB71C1C : 0xFF8D3A2A, solo, () -> {
             if (!confirmNew) confirmNew = true;
             else {
                 confirmNew = false;
@@ -652,6 +747,7 @@ public class Hud {
             "5. Holzfäller fällt Bäume → Sägewerk macht Bretter. Förster pflanzt neue Bäume. Steinbruch holt Steine.",
             "6. Wachstube/Wachturm an der Grenze: ein Soldat zieht ein und dein Land wächst.",
             "7. Viel benutzte Wege werden gepflastert (schneller) und bekommen bei noch mehr Verkehr einen zweiten Träger.",
+            "8. Zu zweit: Menü → „2 Spieler“. Die Tablets einmal in den Android-Einstellungen per Bluetooth koppeln. Einer tippt „Spiel erstellen“, der andere wählt dieses Tablet aus der Liste.",
             "Bedienen: Mit einem Finger schieben, mit zwei Fingern zoomen. „Bauplätze“ zeigt, wo was hinpasst: gelb = klein, orange = groß. „Auslastung“ zeigt, wie fleißig jedes Haus ist. Oben auf die Waren tippen öffnet das Lager. Die kleine Karte unten links bringt dich mit einem Tipp überall hin.",
     };
 
@@ -784,12 +880,13 @@ public class Hud {
 
     private void store(Canvas c, int vw, int vh) {
         RectF r = window(c, vw, vh, 820 * u, 600 * u, "Lager & Leute");
-        World.Building hq = w.hqB();
+        World.Building hq = w.hqB(me);
         int dark = 0xFF3B2A1A;
         int[] onWay = new int[World.NWARES];
-        for (World.Flag f : w.flags.values()) for (World.Ware x : f.wares) onWay[x.type]++;
+        for (World.Flag f : w.flags.values()) if (f.player == me) for (World.Ware x : f.wares) onWay[x.type]++;
         int carriers = 0, builders = 0, workers = 0, soldiersOut = 0;
         for (World.Settler s : w.settlers.values()) {
+            if (s.player != me) continue;
             if (s.carry != null) onWay[s.carry.type]++;
             if (s.job == World.J_CARRIER) carriers++;
             else if (s.job == World.J_BUILDER) builders++;
@@ -817,11 +914,11 @@ public class Hud {
         text(c, "Leute", x, y, 21 * u, 0xFF8D6E4A, true, Paint.Align.LEFT);
         y += 34 * u;
         String[][] rows = {
-                {"Freie Siedler im Hauptquartier", String.valueOf(w.pool)},
+                {"Freie Siedler im Hauptquartier", w.pool(me) + " / " + World.POOL_MAX},
                 {"Träger auf den Wegen", String.valueOf(carriers)},
                 {"Bauarbeiter", String.valueOf(builders)},
                 {"Arbeiter in Gebäuden", String.valueOf(workers)},
-                {"Soldaten im Hauptquartier", String.valueOf(w.soldiers)},
+                {"Soldaten im Hauptquartier", String.valueOf(w.soldiers(me))},
                 {"Soldaten in Wachgebäuden", String.valueOf(soldiersOut)}};
         float colW = (r.width() - 60 * u) / 2;
         for (int i = 0; i < rows.length; i++) {
@@ -835,7 +932,7 @@ public class Hud {
         int[] types = {World.B_WOOD, World.B_FOREST, World.B_QUARRY, World.B_SAW, World.B_GUARD, World.B_TOWER};
         for (int i = 0; i < types.length; i++) {
             int tt = types[i];
-            int done = w.countBuildings(tt, true), all = w.countBuildings(tt, false);
+            int done = w.countBuildings(tt, true, me), all = w.countBuildings(tt, false, me);
             float rx = x + (i % 2) * colW, ry = y + (i / 2) * 34 * u;
             text(c, World.B_NAMES[tt], rx, ry, 17 * u, dark, false, Paint.Align.LEFT);
             text(c, done + (all > done ? "  (+" + (all - done) + " im Bau)" : ""), rx + colW - 30 * u, ry, 17 * u, dark, true, Paint.Align.RIGHT);
@@ -844,7 +941,7 @@ public class Hud {
 
     private void stats(Canvas c, int vw, int vh) {
         RectF r = window(c, vw, vh, 900 * u, 640 * u, "Statistik");
-        java.util.ArrayList<int[]> st = w.stats;
+        java.util.ArrayList<int[]> st = w.statsOf(me);
         if (st.size() < 2) {
             wrap(c, "Noch zu wenig Daten – schau in ein paar Minuten wieder rein.", r.left + 30 * u, r.top + 100 * u, r.width() - 60 * u, 19 * u, 0xFF3B2A1A);
             return;
@@ -895,14 +992,16 @@ public class Hud {
 
     private void msgWindow(Canvas c, int vw, int vh) {
         RectF r = window(c, vw, vh, 820 * u, 640 * u, "Meldungen");
-        if (w.msgs.isEmpty()) {
+        java.util.ArrayList<World.Msg> list = new java.util.ArrayList<>();
+        for (World.Msg m : w.msgs) if (mine(m)) list.add(m);
+        if (list.isEmpty()) {
             text(c, "Noch keine Meldungen.", r.left + 30 * u, r.top + 100 * u, 19 * u, 0xFF3B2A1A, false, Paint.Align.LEFT);
             return;
         }
         float y = r.top + 80 * u;
         int rows = (int) ((r.bottom - y - 20 * u) / (54 * u));
-        for (int i = w.msgs.size() - 1, k = 0; i >= 0 && k < rows; i--, k++) {
-            final World.Msg m = w.msgs.get(i);
+        for (int i = list.size() - 1, k = 0; i >= 0 && k < rows; i--, k++) {
+            final World.Msg m = list.get(i);
             RectF br = rect(r.left + 24 * u, y, r.right - 24 * u, y + 46 * u);
             box(c, br, 0xFFF7EEDA, 10 * u);
             text(c, m.text, br.left + 16 * u, br.centerY() + 6 * u, 17 * u, 0xFF3B2A1A, false, Paint.Align.LEFT);
@@ -913,7 +1012,7 @@ public class Hud {
     }
 
     private void slots(Canvas c, int vw, int vh) {
-        RectF r = window(c, vw, vh, 760 * u, 470 * u, "Spielstände");
+        RectF r = window(c, vw, vh, 900 * u, 470 * u, "Spielstände");
         float y = r.top + 86 * u;
         text(c, "Das laufende Spiel wird immer automatisch gespeichert. Hier kannst du zusätzlich sichern.", r.left + 30 * u, y, 16 * u, 0xFF6D5A44, false, Paint.Align.LEFT);
         y += 24 * u;
@@ -928,17 +1027,37 @@ public class Hud {
                 l1 = info.substring(0, k);
                 l2 = info.substring(k + 5);
             }
-            text(c, "Platz " + i + (info == null ? "" : "  –  " + l1), br.left + 18 * u, br.top + 34 * u, 20 * u, 0xFF3B2A1A, true, Paint.Align.LEFT);
+            text(c, "Platz " + i + (info == null ? "" : "  –  " + l1), br.left + 18 * u, br.top + 34 * u, 19 * u, 0xFF3B2A1A, true, Paint.Align.LEFT);
             text(c, info == null ? "leer" : l2, br.left + 18 * u, br.top + 64 * u, 14 * u, 0xFF6D5A44, false, Paint.Align.LEFT);
-            button(c, br.right - 300 * u, br.top + 16 * u, 136 * u, 52 * u, "Speichern", 0xFF1565C0, true, () -> {
+            boolean askSave = confirmSlot == slot && confirmSlotKind == 1;
+            boolean askDel = confirmSlot == slot && confirmSlotKind == 2;
+            boolean solo = host.role() == 0;
+            button(c, br.right - 438 * u, br.top + 16 * u, 136 * u, 52 * u, askSave ? "Überschreiben?" : "Speichern", askSave ? 0xFFB71C1C : 0xFF1565C0, host.role() != 2, () -> {
+                if (info != null && !askSave) {
+                    confirmSlot = slot;
+                    confirmSlotKind = 1;
+                    return;
+                }
+                confirmSlot = 0;
                 host.saveSlot(slot);
                 slotNote = "Auf Platz " + slot + " gespeichert.";
             });
-            button(c, br.right - 152 * u, br.top + 16 * u, 136 * u, 52 * u, "Laden", 0xFF2E7D32, info != null, () -> {
+            button(c, br.right - 294 * u, br.top + 16 * u, 136 * u, 52 * u, "Laden", 0xFF2E7D32, info != null && solo, () -> {
+                confirmSlot = 0;
                 if (host.loadSlot(slot)) {
                     win = WIN_NONE;
                     say("Spielstand " + slot + " geladen.");
                 } else slotNote = "Laden hat nicht geklappt.";
+            });
+            button(c, br.right - 150 * u, br.top + 16 * u, 134 * u, 52 * u, askDel ? "Wirklich?" : "Löschen", askDel ? 0xFFB71C1C : 0xFF8D3A2A, info != null, () -> {
+                if (!askDel) {
+                    confirmSlot = slot;
+                    confirmSlotKind = 2;
+                    return;
+                }
+                confirmSlot = 0;
+                host.deleteSlot(slot);
+                slotNote = "Platz " + slot + " gelöscht.";
             });
             y += 96 * u;
         }
@@ -967,5 +1086,89 @@ public class Hud {
         text(c, val == 0 ? "aus" : val * 10 + " %", (barL + barR) / 2, y + 60 * u, 14 * u, 0xFF6D5A44, false, Paint.Align.CENTER);
         button(c, r.right - 90 * u, y, 60 * u, 52 * u, "+", 0xFF8D6E4A, true, () -> { st.by(1); host.volumes(fxVol, ambVol); });
         return y + 80 * u;
+    }
+
+    // ---------- 2 Spieler ----------
+
+    private void mpWin(Canvas c, int vw, int vh) {
+        RectF r = window(c, vw, vh, 880 * u, 640 * u, "2 Spieler über Bluetooth");
+        int dark = 0xFF3B2A1A;
+        float x = r.left + 30 * u, y = r.top + 90 * u, in = r.width() - 60 * u;
+        int st = host.mpState();
+        String txt = host.mpText();
+        if (st != 0) {
+            box(c, rect(x, y - 6 * u, x + in, y + 70 * u), 0xFFF7EEDA, 12 * u);
+            y = wrap(c, txt == null ? "" : txt, x + 18 * u, y + 26 * u, in - 36 * u, 19 * u, dark);
+            button(c, x, r.bottom - 84 * u, in, 58 * u, st == 3 ? "Verbindung trennen" : "Abbrechen", 0xFF8D3A2A, true, () -> host.mpLeave());
+            if (st == 3) {
+                float yy = r.top + 200 * u;
+                String mode = w.mode == 1 ? "Miteinander – ihr baut zusammen an einer Siedlung." : w.mode == 2 ? "Wettbauen – " + goalText() + "." : "";
+                yy = wrap(c, mode, x, yy, in, 19 * u, dark) + 6 * u;
+                if (w.mode == 2)
+                    wrap(c, "Du bist Spieler " + World.P_NAMES[me] + ".", x, yy, in, 19 * u, World.P_COLORS[me]);
+                if (host.role() == 2)
+                    wrap(c, "Tempo und Pause bestimmt der Gastgeber.", x, yy + 34 * u, in, 17 * u, 0xFF6D5A44);
+            }
+            return;
+        }
+        if (txt != null) y = wrap(c, txt, x, y, in, 17 * u, 0xFFB71C1C) + 6 * u;
+        text(c, "Spiel erstellen (du bist der Gastgeber)", x, y, 20 * u, 0xFF8D6E4A, true, Paint.Align.LEFT);
+        y += 14 * u;
+        float bw = (in - 24 * u) / 3;
+        button(c, x, y, bw, 70 * u, "Miteinander", 0xFF2E7D32, true, () -> host.mpHost(1, 0, 0));
+        button(c, x + bw + 12 * u, y, bw, 70 * u, "Wettbauen: Land", 0xFF6A1B9A, true, () -> host.mpHost(2, 1, 450));
+        button(c, x + 2 * (bw + 12 * u), y, bw, 70 * u, "Wettbauen: Bretter", 0xFF6A1B9A, true, () -> host.mpHost(2, 2, 150));
+        y += 96 * u;
+        y = wrap(c, "Miteinander: dein jetziges Spiel wird geteilt. Wettbauen: neue Karte, jeder hat sein eigenes Hauptquartier – wer zuerst 450 Felder Land bzw. 150 Bretter im Lager hat, gewinnt.",
+                x, y, in, 16 * u, 0xFF6D5A44) + 14 * u;
+        text(c, "Beitreten (Spiel des anderen)", x, y, 20 * u, 0xFF8D6E4A, true, Paint.Align.LEFT);
+        y += 14 * u;
+        String[] dev = host.mpDevices();
+        if (dev == null) {
+            wrap(c, "Bluetooth ist aus oder das Spiel darf es noch nicht benutzen. Bitte Bluetooth einschalten und erlauben, dann dieses Fenster neu öffnen.", x, y + 20 * u, in, 17 * u, 0xFFB71C1C);
+        } else if (dev.length == 0) {
+            wrap(c, "Keine gekoppelten Geräte. Koppel die beiden Tablets einmal in den Android-Einstellungen unter Bluetooth.", x, y + 20 * u, in, 17 * u, 0xFFB71C1C);
+        } else {
+            float dw = (in - 12 * u) / 2;
+            for (int i = 0; i < dev.length && i < 6; i++) {
+                final int idx = i;
+                float bx = x + (i % 2) * (dw + 12 * u), by = y + (i / 2) * 62 * u;
+                button(c, bx, by, dw, 52 * u, dev[i], 0xFF1565C0, true, () -> host.mpJoin(idx));
+            }
+            y += ((Math.min(dev.length, 6) + 1) / 2) * 62 * u;
+        }
+        wrap(c, "Tipp: Erst auf dem einen Tablet „Spiel erstellen“ tippen, dann auf dem anderen das Tablet aus der Liste wählen.", x, r.bottom - 30 * u, in, 15 * u, 0xFF6D5A44);
+    }
+
+    private String goalText() {
+        return w.goalType == 1 ? "wer zuerst " + w.goalValue + " Felder Land hat, gewinnt" : "wer zuerst " + w.goalValue + " Bretter im Lager hat, gewinnt";
+    }
+
+    private void raceBar(Canvas c, int vw) {
+        float bw = 520 * u, x = vw / 2f - bw / 2, y = 66 * u;
+        if (ren.roadFrom >= 0) y = 158 * u;
+        box(c, rect(x, y, x + bw, y + 40 * u), 0xE0302318, 10 * u);
+        String unit = w.goalType == 1 ? " Land" : " Bretter";
+        text(c, "Ziel " + w.goalValue + unit, x + 14 * u, y + 26 * u, 15 * u, 0xFFFFD54F, true, Paint.Align.LEFT);
+        float bl = x + 170 * u, br = x + bw - 14 * u, half = (br - bl - 10 * u) / 2;
+        for (int pl = 0; pl < 2; pl++) {
+            float l = bl + pl * (half + 10 * u);
+            box(c, rect(l, y + 12 * u, l + half, y + 28 * u), 0xFF5A4A3A, 6 * u);
+            float f = Math.min(1f, w.goalProgress(pl) / (float) Math.max(1, w.goalValue));
+            box(c, rect(l, y + 12 * u, l + half * f, y + 28 * u), World.P_COLORS[pl], 6 * u);
+            text(c, World.P_NAMES[pl] + " " + w.goalProgress(pl), l + half / 2, y + 25 * u, 12 * u, 0xFFFFFFFF, true, Paint.Align.CENTER);
+        }
+    }
+
+    private void winner(Canvas c, int vw, int vh) {
+        int wp = w.winner - 1;
+        float bw = 620 * u, bh = 200 * u;
+        RectF r = rect(vw / 2f - bw / 2, vh / 2f - bh / 2, vw / 2f + bw / 2, vh / 2f + bh / 2);
+        box(c, rect(r.left + 6 * u, r.top + 8 * u, r.right + 6 * u, r.bottom + 8 * u), 0x66000000, 20 * u);
+        box(c, r, 0xF2E9DCC0, 20 * u);
+        text(c, wp == me ? "Gewonnen!" : "Leider verloren", vw / 2f, r.top + 70 * u, 46 * u, World.P_COLORS[wp], true, Paint.Align.CENTER);
+        text(c, "Spieler " + World.P_NAMES[wp] + " hat das Ziel zuerst erreicht.", vw / 2f, r.top + 116 * u, 20 * u, 0xFF3B2A1A, false, Paint.Align.CENTER);
+        text(c, "Antippen zum Schließen – ihr könnt einfach weiterspielen.", vw / 2f, r.top + 150 * u, 16 * u, 0xFF6D5A44, false, Paint.Align.CENTER);
+        btns.add(new Btn(rect(0, 0, vw, vh), () -> winnerSeen = w.winner, null));
     }
 }

@@ -16,6 +16,11 @@ public class Renderer {
     public float camX, camY, zoom = 1.6f;
     public int viewW, viewH;
     public boolean showSpots, showUtil;
+    /** Spieler, der hier zuschaut (0 = blau, 1 = rot) */
+    public int me;
+    private int fogMe = -1;
+    /** Farbe für Fahnen/Wimpel beim nächsten Zeichnen */
+    private int pc = 0xFF1E5BC6;
     public int selected = -1;
     public int roadFrom = -1;
 
@@ -195,7 +200,8 @@ public class Renderer {
 
     public void draw(Canvas c, World w, float t) {
         if (terrainOf != w) buildTerrain(w);
-        if (fogOf != w || fogVer != w.exploredVer) buildFog(w);
+        if (fogOf != w || fogVer != w.exploredVer || fogMe != me) buildFog(w);
+        boolean[] ex = w.exploredOf(me);
         c.drawColor(0xFF000000);
         c.save();
         c.scale(zoom, zoom);
@@ -212,19 +218,20 @@ public class Renderer {
         for (int y = y0; y <= y1; y++)
             for (int x = x0; x <= x1; x++) {
                 int n = y * World.W + x;
-                if (!w.owned[n]) continue;
+                int ow = w.owner[n];
+                if (ow == 0 || !ex[n]) continue;
                 boolean edge = false;
                 for (int d = 0; d < 6 && !edge; d++) {
                     int m = World.nb(n, d);
-                    if (m < 0 || !w.owned[m]) edge = true;
+                    if (m < 0 || w.owner[m] != ow) edge = true;
                 }
-                if (edge) borderStone(c, nx(n), ny(w, n));
+                if (edge) borderStone(c, nx(n), ny(w, n), ow - 1);
             }
 
         // Wege
         p.setStrokeCap(Paint.Cap.ROUND);
         p.setStrokeJoin(Paint.Join.ROUND);
-        for (World.Road r : w.roads.values()) drawRoad(c, w, r.path, r.carrier < 0, r.level);
+        for (World.Road r : w.roads.values()) if (ex[r.path[0]] || ex[r.path[r.path.length - 1]]) drawRoad(c, w, r.path, r.carrier < 0, r.level);
         for (World.Building b : w.buildings.values()) {
             World.Flag f = w.flags.get(b.flag);
             if (f != null) drawRoad(c, w, new int[]{b.node, f.node}, false, 0);
@@ -252,7 +259,7 @@ public class Renderer {
         for (int y = y0; y <= y1; y++) {
             for (int x = x0; x <= x1; x++) {
                 int n = y * World.W + x;
-                if (!w.explored[n]) continue;
+                if (!ex[n]) continue;
                 float px = nx(n), py = ny(w, n);
                 switch (w.obj[n]) {
                     case World.O_TREE: {
@@ -265,7 +272,7 @@ public class Renderer {
                     case World.O_FLAG: flag(c, w, w.flagAt(n), px, py, t); break;
                     case World.O_BUILDING: building(c, w, w.buildings.get(w.objId[n]), px, py, t); break;
                 }
-                if (showSpots && w.owned[n] && w.obj[n] == World.O_NONE) spot(c, w, n, px, py);
+                if (showSpots && w.own(n, me) && w.obj[n] == World.O_NONE) spot(c, w, n, px, py);
             }
             for (float[] fl : w.falls) if ((int) fl[0] / World.W == y) falling(c, w, fl);
             for (World.Settler s : rows[y]) settler(c, w, s, t);
@@ -273,7 +280,7 @@ public class Renderer {
         if (showUtil) {
             for (World.Building b : w.buildings.values()) {
                 int by = b.node / World.W;
-                if (by < y0 || by > y1 || !b.done || b.id == w.hq || b.type >= World.B_GUARD) continue;
+                if (by < y0 || by > y1 || !b.done || World.isHq(b) || b.type >= World.B_GUARD || b.player != me) continue;
                 utilBadge(c, nx(b.node), ny(w, b.node), b);
             }
         }
@@ -294,8 +301,9 @@ public class Renderer {
         Paint fp = new Paint(Paint.ANTI_ALIAS_FLAG);
         fp.setColor(0xFF000000);
         float r = TW * 0.85f / FOG;
+        boolean[] ex = w.exploredOf(me);
         for (int n = 0; n < World.N; n++) {
-            if (w.explored[n]) continue;
+            if (ex[n]) continue;
             float x = nx(n) / FOG, y = ny(w, n) / FOG;
             c.drawCircle(x, y, r, fp);
             // Ränder der Karte ganz abdecken
@@ -308,11 +316,12 @@ public class Renderer {
         // halbdunkler Saum außerhalb des eigenen Landes
         fp.setColor(0x38000000);
         for (int n = 0; n < World.N; n++) {
-            if (!w.explored[n] || w.owned[n]) continue;
+            if (!ex[n] || w.owner[n] != 0) continue;
             c.drawCircle(nx(n) / FOG, ny(w, n) / FOG, r, fp);
         }
         fogOf = w;
         fogVer = w.exploredVer;
+        fogMe = me;
     }
 
     // ---------- Übersichtskarte ----------
@@ -328,8 +337,9 @@ public class Renderer {
         miniOf = w;
         miniT = t;
         java.util.Arrays.fill(miniPx, 0xFF000000);
+        boolean[] ex = w.exploredOf(me);
         for (int n = 0; n < World.N; n++) {
-            if (!w.explored[n]) continue;
+            if (!ex[n]) continue;
             int x = n % World.W, y = n / World.W;
             int col;
             switch (w.terrain[n]) {
@@ -340,7 +350,8 @@ public class Renderer {
             }
             if (w.obj[n] == World.O_TREE) col = 0xFF2F5E25;
             else if (w.obj[n] == World.O_STONE) col = 0xFFA5A19A;
-            if (w.owned[n]) col = mix(col, 0xFF3D7BFF, 0.22f);
+            if (w.owner[n] == 1) col = mix(col, 0xFF3D7BFF, 0.25f);
+            else if (w.owner[n] == 2) col = mix(col, 0xFFFF4040, 0.25f);
             if (w.roadDirs[n] != 0) col = 0xFFE8CC90;
             if (w.obj[n] == World.O_BUILDING || w.obj[n] == World.O_BLOCK) col = 0xFFFFFFFF;
             int px = x * 2 + (y & 1);
@@ -357,10 +368,11 @@ public class Renderer {
 
     /** Ausschnitt der kleinen Karte (in Pixeln der Minikarte): nur das erkundete Gebiet, Seitenverhältnis aspect. */
     public float[] miniBounds(World w, float aspect) {
-        if (miniB != null && miniBOf == w && miniBVer == w.exploredVer) return miniB;
+        if (miniB != null && miniBOf == w && miniBVer == w.exploredVer + me * 100000) return miniB;
         int x0 = World.W, x1 = 0, y0 = World.H, y1 = 0;
+        boolean[] ex = w.exploredOf(me);
         for (int n = 0; n < World.N; n++) {
-            if (!w.explored[n]) continue;
+            if (!ex[n]) continue;
             int x = n % World.W, y = n / World.W;
             x0 = Math.min(x0, x);
             x1 = Math.max(x1, x);
@@ -380,7 +392,7 @@ public class Renderer {
         }
         miniB = new float[]{bx0, by0, bx1, by1};
         miniBOf = w;
-        miniBVer = w.exploredVer;
+        miniBVer = w.exploredVer + me * 100000;
         return miniB;
     }
 
@@ -481,22 +493,22 @@ public class Renderer {
         p.setStyle(Paint.Style.FILL);
     }
 
-    private void borderStone(Canvas c, float x, float y) {
+    private void borderStone(Canvas c, float x, float y, int pl) {
         p.setColor(0x66000000);
         c.drawCircle(x + 1, y + 1, 2.2f, p);
-        p.setColor(0xFF2F64D0);
+        p.setColor(pl == 0 ? 0xFF2F64D0 : 0xFFD03030);
         c.drawCircle(x, y - 1, 2.2f, p);
         p.setColor(0xFFBFD4FF);
         c.drawCircle(x - 0.6f, y - 1.8f, 0.8f, p);
     }
 
     private void spot(Canvas c, World w, int n, float x, float y) {
-        int s = w.buildSize(n);
+        int s = w.buildSize(n, me);
         if (s >= 2) {
             miniHouse(c, x, y, 1.15f, 0xFFFF9800);
         } else if (s == 1) {
             miniHouse(c, x, y, 0.85f, 0xFFFFEB3B);
-        } else if (w.roadDirs[n] == 0 && w.canFlag(n)) {
+        } else if (w.roadDirs[n] == 0 && w.canFlag(n, me)) {
             p.setColor(0xFF5D4037);
             c.drawRect(x - 0.6f, y - 8, x + 0.6f, y, p);
             p.setColor(0xFFFFEB3B);
@@ -637,10 +649,15 @@ public class Renderer {
         path.lineTo(x + 9, y - 12.5f + wv * 0.6f);
         path.quadTo(x + 4.5f, y - 14 + wv, x + 0.7f, y - 12.5f);
         path.close();
-        p.setColor(0xFF1E5BC6);
+        p.setColor(World.P_COLORS[f.player]);
         c.drawPath(path, p);
         p.setColor(0xFFFFFFFF);
         c.drawRect(x + 0.7f, y - 15.7f, x + 8.5f, y - 14.7f + wv * 0.4f, p);
+    }
+
+    /** Wimpelfarbe für Gebäude-Bilder in Fenstern */
+    public void bannerFor(int pl) {
+        pc = World.P_COLORS[pl];
     }
 
     // ---------- Gebäude ----------
@@ -731,7 +748,7 @@ public class Renderer {
         path.lineTo(x + 8, y - 11 + wv);
         path.lineTo(x + 0.6f, y - 7.5f);
         path.close();
-        p.setColor(0xFF1E5BC6);
+        p.setColor(pc);
         c.drawPath(path, p);
     }
 
@@ -781,6 +798,7 @@ public class Renderer {
 
     void building(Canvas c, World w, World.Building b, float x, float y, float t) {
         if (b == null) return;
+        pc = World.P_COLORS[b.player];
         if (b.done) {
             buildingSprite(c, b.type, x, y, t);
             World.Settler wk = w.settlers.get(b.worker);
@@ -873,7 +891,7 @@ public class Renderer {
 
     private void falling(Canvas c, World w, float[] fl) {
         int n = (int) fl[0];
-        if (!w.explored[n]) return;
+        if (!w.exploredOf(me)[n]) return;
         float x = nx(n), y = ny(w, n);
         float age = w.time - fl[1];
         // Stumpf
@@ -1058,11 +1076,13 @@ public class Renderer {
             x += (nx(s.next) - x) * s.prog;
             y += (ny(w, s.next) - y) * s.prog;
         }
-        if (!w.explored[s.node]) return;
+        if (!w.exploredOf(me)[s.node]) return;
         int face = walk ? (nx(s.next) < nx(s.node) ? -1 : 1) : ((s.id & 1) == 0 ? 1 : -1);
         float legs = walk ? (float) Math.sin((s.prog + s.id * 0.37f) * Math.PI * 2) : 0;
         int shirt = SHIRT[s.job];
         if (s.helper) shirt = 0xFFEF6C00;
+        if (s.job == World.J_SOLDIER) shirt = World.P_COLORS[s.player];
+        else if (s.player == 1 && s.job == World.J_CARRIER) shirt = 0xFF8E24AA;
         int hat = s.job == World.J_SOLDIER ? 0xFF9E9E9E : s.job == World.J_BUILDER ? 0xFFF9A825 : 0xFF5D4037;
         float tp = s.tempo();
         int car = s.carried();

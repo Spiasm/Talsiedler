@@ -29,3 +29,9 @@ Ein Aufbauspiel für Android-Tablets im Stil der alten Siedler-Klassiker – mit
 - Stufe 2: Nahrung, Bergbau, Geologen, Werkzeuge
 - Stufe 3: Militär und Computergegner
 - Stufe 4: Schiffe, Missionen, Feinschliff
+
+## Version 3
+- 2 Spieler über Bluetooth: Miteinander (gemeinsame Siedlung) oder Wettbauen (eigene Hauptquartiere, Ziel Land oder Bretter)
+- Wege und leere Fahnen ohne Rückfrage abreißen
+- Spielstände löschen, Rückfrage vor dem Überschreiben
+- Alle 20 Sekunden ein neuer Siedler, bis 67 („Six-seven!“)

@@ -12,6 +12,7 @@ public class GameView extends View {
     private long last;
     private float clock, acc, saveT;
     private final Hud.Host host;
+    public Session session;
 
     // Touch
     private float downX, downY, lastX, lastY, startDist, startZoom, midX, midY;
@@ -36,6 +37,16 @@ public class GameView extends View {
         return world;
     }
 
+    /** Welt austauschen, ohne Ansicht und Bedienung zurückzusetzen (Neuabgleich zu zweit). */
+    public void replaceWorld(World w) {
+        world = w;
+        hud.w = w;
+    }
+
+    public void centerOnMine() {
+        if (world != null && ren.viewW > 0) ren.centerOn(world, world.hqB(hud.me).node);
+    }
+
     @Override
     protected void onSizeChanged(int w, int h, int ow, int oh) {
         boolean first = ren.viewW == 0;
@@ -56,16 +67,21 @@ public class GameView extends View {
         if (dt > 0.25f) dt = 0.25f;
         clock += dt;
         if (world != null) {
-            if (!hud.paused && !hud.intro) {
+            int role = session == null ? Session.SOLO : session.role;
+            if (role == Session.GUEST) {
+                // der Gast rechnet nur, was der Gastgeber schickt
+                if (session.w != null && session.w != world) replaceWorld(session.w);
+            } else if (!hud.paused && !hud.intro) {
                 acc += dt * hud.speed;
                 int steps = 0;
                 while (acc >= 0.05f && steps < 40) {
-                    world.update(0.05f);
                     acc -= 0.05f;
                     steps++;
                 }
                 if (steps >= 40) acc = 0;
-            }
+                if (role == Session.HOST) session.hostFrame(steps);
+                else for (int i = 0; i < steps; i++) world.update(0.05f);
+            } else if (role == Session.HOST) session.hostFrame(0);
             saveT += dt;
             if (saveT > 60f) {
                 saveT = 0;

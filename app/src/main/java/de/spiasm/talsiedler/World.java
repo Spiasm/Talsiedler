@@ -60,14 +60,14 @@ public class World implements Serializable {
 
     public static class Flag implements Serializable {
         private static final long serialVersionUID = 1L;
-        public int id, node;
+        public int id, node, player;
         public final int[] road = {-1, -1, -1, -1, -1, -1};
         public final ArrayList<Ware> wares = new ArrayList<>();
     }
 
     public static class Road implements Serializable {
         private static final long serialVersionUID = 1L;
-        public int id, a, b;
+        public int id, a, b, player;
         public int[] path;
         public int carrier = -1;
         /** 0 = Trampelpfad, 1 = gepflastert, 2 = gepflastert mit zweitem Träger */
@@ -82,11 +82,13 @@ public class World implements Serializable {
         public String text;
         public int node;
         public float time;
+        /** -1 = für alle */
+        public int player;
     }
 
     public static class Building implements Serializable {
         private static final long serialVersionUID = 1L;
-        public int id, type, node, flag;
+        public int id, type, node, flag, player;
         public boolean done, occupied;
         public final int[] got = new int[NWARES], incoming = new int[NWARES], stock = new int[NWARES];
         public int used;
@@ -114,7 +116,7 @@ public class World implements Serializable {
 
     public static class Settler implements Serializable {
         private static final long serialVersionUID = 1L;
-        public int id, job, node, next = -1;
+        public int id, job, node, next = -1, player;
         public float prog;
         int[] path;
         int pi;
@@ -157,7 +159,26 @@ public class World implements Serializable {
     public final byte[] objVal = new byte[N];
     public final int[] objId = new int[N];
     public final byte[] roadDirs = new byte[N];
+    /** Land irgendeines Spielers */
     public final boolean[] owned = new boolean[N];
+    /** Besitzer je Feld: 0 = niemand, 1 = Spieler 1 (blau), 2 = Spieler 2 (rot) */
+    public byte[] owner = new byte[N];
+    public boolean[] explored1;
+    public ArrayList<int[]> stats1;
+    float noPoolT1, sixT0, sixT1, goalT;
+    public int hq1, pool1, soldiers1;
+    public int players = 1;
+    /** 0 = allein, 1 = miteinander, 2 = wettbauen */
+    public int mode;
+    /** Wettbauen: 1 = Land, 2 = Bretter */
+    public int goalType, goalValue;
+    /** 0 = noch keiner, sonst Spieler+1 */
+    public int winner;
+    public long steps;
+    public int[] landCount = new int[2];
+    public static final int POOL_MAX = 67;
+    public static final String[] P_NAMES = {"Blau", "Rot"};
+    public static final int[] P_COLORS = {0xFF1E5BC6, 0xFFC62828};
     final float[] growT = new float[N];
     final boolean[] reserved = new boolean[N];
     public boolean[] explored = new boolean[N];
@@ -237,9 +258,106 @@ public class World implements Serializable {
     // ---------------- Kartenerzeugung ----------------
 
     public World(long seed) {
+        this(seed, 1, 0);
+    }
+
+    public World(long seed, int players, int mode) {
         this.seed = seed;
+        this.players = players;
+        this.mode = mode;
         rng = new Random(seed);
+        if (players > 1) {
+            explored1 = new boolean[N];
+            stats1 = new ArrayList<>();
+            pool1 = pool;
+            soldiers1 = soldiers;
+        }
         generate();
+    }
+
+    // ---------------- Spieler-Hilfen ----------------
+
+    public int hqId(int pl) {
+        return pl == 0 ? hq : hq1;
+    }
+
+    public Building hqB(int pl) {
+        return buildings.get(hqId(pl));
+    }
+
+    public int pool(int pl) {
+        return pl == 0 ? pool : pool1;
+    }
+
+    void addPool(int pl, int d) {
+        if (pl == 0) pool += d;
+        else pool1 += d;
+    }
+
+    public int soldiers(int pl) {
+        return pl == 0 ? soldiers : soldiers1;
+    }
+
+    void addSoldiers(int pl, int d) {
+        if (pl == 0) soldiers += d;
+        else soldiers1 += d;
+    }
+
+    public boolean[] exploredOf(int pl) {
+        return pl == 0 || explored1 == null ? explored : explored1;
+    }
+
+    public ArrayList<int[]> statsOf(int pl) {
+        return pl == 0 || stats1 == null ? stats : stats1;
+    }
+
+    public boolean own(int n, int pl) {
+        return owner[n] == pl + 1;
+    }
+
+    public static boolean isHq(Building b) {
+        return b.type == B_HQ;
+    }
+
+    // ---------------- Befehle (für Bedienung und 2-Spieler) ----------------
+
+    public static final int C_BUILD = 1, C_FLAG = 2, C_ROAD = 3, C_REMOVE = 4, C_STOP = 5;
+
+    /** Befehl ausführen: {Art, Spieler, a, b} */
+    public boolean apply(int[] c) {
+        int pl = c[1];
+        if (pl < 0 || pl >= players) return false;
+        switch (c[0]) {
+            case C_BUILD:
+                return placeBuilding(c[2], c[3], pl) >= 0;
+            case C_FLAG:
+                return placeFlag(c[3], pl) != null;
+            case C_ROAD: {
+                Flag f = flags.get(c[2]);
+                if (f == null || f.player != pl) return false;
+                return buildRoad(planRoad(c[2], c[3]));
+            }
+            case C_REMOVE:
+                return removeAt(c[3], pl);
+            case C_STOP: {
+                Building b = buildings.get(c[2]);
+                if (b == null || b.player != pl) return false;
+                setStopped(b, c[3] != 0);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Prüfsumme des Spielstands (für den Gleichlauf zweier Tablets). */
+    public long hash() {
+        long h = steps * 31 + nextId;
+        h = h * 31 + pool * 7 + pool1 * 13 + soldiers * 17 + soldiers1 * 19;
+        for (Settler s : settlers.values()) h = h * 31 + s.id * 7 + s.node * 3 + s.state + (s.next + 1) * 11;
+        for (Building b : buildings.values()) h = h * 31 + b.id + b.used * 5 + b.stock[0] * 7 + b.stock[1] * 11 + b.stock[2] * 13;
+        for (Flag f : flags.values()) h = h * 31 + f.id + f.wares.size();
+        for (int n = 0; n < N; n += 7) h = h * 31 + obj[n] * 3 + objVal[n];
+        return h;
     }
 
     private float[] noiseGrid(int cell, Random r) {
@@ -269,16 +387,17 @@ public class World implements Serializable {
 
     private void generate() {
         float[] land = fbm(rng), forest = fbm(rng), rocks = fbm(rng), bumps = noiseGrid(4, rng);
-        int cx = W / 2, cy = H / 2;
+        int cy = H / 2;
         if ((cy & 1) == 1) cy++;
-        int center = cy * W + cx;
+        int[] centers = players > 1 ? new int[]{cy * W + 17, cy * W + W - 18} : new int[]{cy * W + W / 2};
         for (int n = 0; n < N; n++) {
             int x = n % W, y = n / W;
             float v = land[n];
             // Rand der Karte wird Wasser
             int edge = Math.min(Math.min(x, W - 1 - x), Math.min(y, H - 1 - y));
             if (edge < 4) v -= (4 - edge) * 0.12f;
-            int dc = dist(n, center);
+            int dc = 999;
+            for (int c : centers) dc = Math.min(dc, dist(n, c));
             if (dc < 12) v = v * (dc / 12f) + 0.48f * (1 - dc / 12f);
             if (v < 0.3f) {
                 terrain[n] = T_WATER;
@@ -304,13 +423,16 @@ public class World implements Serializable {
             }
         }
         // Startgebiet ebnen
-        for (int m : around(center, 4)) {
-            terrain[m] = T_GRASS;
-            height[m] = 2;
-        }
+        for (int center : centers)
+            for (int m : around(center, 4)) {
+                terrain[m] = T_GRASS;
+                height[m] = 2;
+            }
         for (int n = 0; n < N; n++) {
-            if (terrain[n] == T_GRASS && dist(n, center) > 3) {
-                float dens = dist(n, center) < 10 ? 0.35f : 0.75f;
+            int dc = 999;
+            for (int c : centers) dc = Math.min(dc, dist(n, c));
+            if (terrain[n] == T_GRASS && dc > 3) {
+                float dens = dc < 10 ? 0.35f : 0.75f;
                 if (forest[n] > 0.58f && rng.nextFloat() < dens) {
                     obj[n] = O_TREE;
                     objVal[n] = (byte) (rng.nextFloat() < 0.85f ? 3 : rng.nextInt(3));
@@ -320,6 +442,12 @@ public class World implements Serializable {
                 }
             }
         }
+        for (int pl = 0; pl < centers.length; pl++) startArea(centers[pl], pl);
+        recomputeTerritory();
+    }
+
+    private void startArea(int center, int pl) {
+        int cx = center % W, cy = center / W;
         // Rund ums Hauptquartier sicher Bäume und Steine
         int trees = 0, stones = 0;
         for (int m : around(center, 8)) {
@@ -348,8 +476,10 @@ public class World implements Serializable {
         b.node = center;
         b.done = true;
         b.occupied = true;
+        b.player = pl;
         buildings.put(b.id, b);
-        hq = b.id;
+        if (pl == 0) hq = b.id;
+        else hq1 = b.id;
         obj[center] = O_BUILDING;
         objId[center] = b.id;
         for (int d : new int[]{3, 4, 5}) {
@@ -357,18 +487,25 @@ public class World implements Serializable {
             obj[m] = O_BLOCK;
             objId[m] = b.id;
         }
-        Flag f = makeFlag(nb(center, 1));
+        Flag f = makeFlag(nb(center, 1), pl);
         b.flag = f.id;
         b.stock[WARE_LOG] = 8;
         b.stock[WARE_BOARD] = 30;
         b.stock[WARE_STONE] = 20;
-        recomputeTerritory();
     }
 
     // ---------------- Abfragen für die Bedienung ----------------
 
     public Building hqB() {
         return buildings.get(hq);
+    }
+
+    public boolean canFlag(int n) {
+        return canFlag(n, 0);
+    }
+
+    public int buildSize(int n) {
+        return buildSize(n, 0);
     }
 
     public Building buildingAt(int n) {
@@ -402,8 +539,8 @@ public class World implements Serializable {
     }
 
     /** Darf hier eine Fahne hin? (auch mitten auf einem Weg) */
-    public boolean canFlag(int n) {
-        if (n < 0 || !owned[n] || !passableTerrain(n)) return false;
+    public boolean canFlag(int n, int pl) {
+        if (n < 0 || !own(n, pl) || !passableTerrain(n)) return false;
         if (obj[n] != O_NONE) return false;
         if (neighbourFlag(n)) return false;
         int x = n % W, y = n / W;
@@ -411,14 +548,14 @@ public class World implements Serializable {
     }
 
     /** Größte Gebäudegröße, die hier gebaut werden kann (0 = nichts). */
-    public int buildSize(int n) {
-        if (n < 0 || !owned[n] || terrain[n] != T_GRASS || obj[n] != O_NONE || roadDirs[n] != 0) return 0;
+    public int buildSize(int n, int pl) {
+        if (n < 0 || !own(n, pl) || terrain[n] != T_GRASS || obj[n] != O_NONE || roadDirs[n] != 0) return 0;
         int f = nb(n, 1);
-        if (f < 0 || !owned[f]) return 0;
+        if (f < 0 || !own(f, pl)) return 0;
         if (obj[f] == O_FLAG) {
             Flag fl = flagAt(f);
             if (fl.road[4] != -1) return 0;
-        } else if (!canFlag(f)) return 0;
+        } else if (!canFlag(f, pl)) return 0;
         if (Math.abs(height[n] - height[f]) > 1) return 0;
         for (int d = 0; d < 6; d++) {
             int m = nb(n, d);
@@ -430,7 +567,7 @@ public class World implements Serializable {
         boolean medium = true;
         for (int d : new int[]{3, 4, 5}) {
             int m = nb(n, d);
-            if (m < 0 || terrain[m] != T_GRASS || obj[m] != O_NONE || roadDirs[m] != 0 || !owned[m]
+            if (m < 0 || terrain[m] != T_GRASS || obj[m] != O_NONE || roadDirs[m] != 0 || !own(m, pl)
                     || Math.abs(height[m] - height[n]) > 1) {
                 medium = false;
                 break;
@@ -446,10 +583,11 @@ public class World implements Serializable {
 
     // ---------------- Bauen ----------------
 
-    Flag makeFlag(int n) {
+    Flag makeFlag(int n, int pl) {
         Flag f = new Flag();
         f.id = newId();
         f.node = n;
+        f.player = pl;
         flags.put(f.id, f);
         obj[n] = O_FLAG;
         objId[n] = f.id;
@@ -458,23 +596,34 @@ public class World implements Serializable {
 
     /** Fahne setzen, teilt einen Weg falls nötig. */
     public Flag placeFlag(int n) {
-        if (!canFlag(n)) return null;
+        return placeFlag(n, 0);
+    }
+
+    public Flag placeFlag(int n, int pl) {
+        if (!canFlag(n, pl)) return null;
         Road r = roadAt(n);
-        Flag f = makeFlag(n);
+        if (r != null && r.player != pl) return null;
+        Flag f = makeFlag(n, pl);
         if (r != null) splitRoad(r, f);
         return f;
     }
 
     public int placeBuilding(int type, int n) {
-        int size = buildSize(n);
+        return placeBuilding(type, n, 0);
+    }
+
+    public int placeBuilding(int type, int n, int pl) {
+        int size = buildSize(n, pl);
         if (size < B_SIZE[type] || type == B_HQ) return -1;
         int fn = nb(n, 1);
         Flag f = flagAt(fn);
-        if (f == null) f = placeFlag(fn);
+        if (f != null && f.player != pl) return -1;
+        if (f == null) f = placeFlag(fn, pl);
         if (f == null) return -1;
         Building b = new Building();
         b.id = newId();
         b.type = type;
+        b.player = pl;
         b.node = n;
         b.flag = f.id;
         buildings.put(b.id, b);
@@ -495,10 +644,16 @@ public class World implements Serializable {
     public int[] planRoad(int fromFlag, int target) {
         Flag f = flags.get(fromFlag);
         if (f == null || target < 0) return null;
+        int pl = f.player;
         Building tb = buildingAt(target);
-        if (tb != null) target = flags.get(tb.flag).node;
+        if (tb != null) {
+            if (tb.player != pl) return null;
+            target = flags.get(tb.flag).node;
+        }
         if (target == f.node) return null;
-        boolean ok = obj[target] == O_FLAG || canFlag(target);
+        Flag tf0 = flagAt(target);
+        if (tf0 != null && tf0.player != pl) return null;
+        boolean ok = tf0 != null || canFlag(target, pl);
         if (!ok) return null;
         int[] prev = new int[N];
         java.util.Arrays.fill(prev, -2);
@@ -521,7 +676,7 @@ public class World implements Serializable {
                     found = true;
                     break;
                 }
-                if (!owned[m] || !passableTerrain(m) || obj[m] != O_NONE || roadDirs[m] != 0) continue;
+                if (!own(m, pl) || !passableTerrain(m) || obj[m] != O_NONE || roadDirs[m] != 0) continue;
                 if (dist(m, f.node) > 30) continue;
                 prev[m] = c;
                 q.add(m);
@@ -539,17 +694,18 @@ public class World implements Serializable {
     public boolean buildRoad(int[] path) {
         if (path == null || path.length < 2) return false;
         if (obj[path[0]] != O_FLAG) return false;
+        int pl = flagAt(path[0]).player;
         int end = path[path.length - 1];
         // Weg darf noch immer frei sein
         for (int i = 1; i < path.length - 1; i++)
-            if (obj[path[i]] != O_NONE || roadDirs[path[i]] != 0 || !owned[path[i]]) return false;
-        if (obj[end] != O_FLAG && placeFlag(end) == null) return false;
+            if (obj[path[i]] != O_NONE || roadDirs[path[i]] != 0 || !own(path[i], pl)) return false;
+        if (obj[end] != O_FLAG && placeFlag(end, pl) == null) return false;
         ArrayList<Integer> cut = new ArrayList<>();
         cut.add(0);
         int last = 0;
         for (int i = 2; i <= path.length - 3; i++) {
-            if (i - last >= 2 && canFlag(path[i])) {
-                makeFlag(path[i]);
+            if (i - last >= 2 && canFlag(path[i], pl)) {
+                makeFlag(path[i], pl);
                 cut.add(i);
                 last = i;
             }
@@ -569,6 +725,7 @@ public class World implements Serializable {
         Flag fa = flagAt(path[0]), fb = flagAt(path[path.length - 1]);
         r.a = fa.id;
         r.b = fb.id;
+        r.player = fa.player;
         fa.road[dirTo(path[0], path[1])] = r.id;
         fb.road[dirTo(path[path.length - 1], path[path.length - 2])] = r.id;
         for (int i = 0; i + 1 < path.length; i++) {
@@ -599,7 +756,7 @@ public class World implements Serializable {
                 lostCarried.add(carried);
             }
             settlers.remove(c.id);
-            pool++;
+            addPool(r.player, 1);
             for (Flag f : new Flag[]{fa, fb}) {
                 if (f == null) continue;
                 for (Ware w : f.wares) if (w.res == c.id) w.res = -1;
@@ -647,11 +804,12 @@ public class World implements Serializable {
 
     private void loseWare(Ware w) {
         Building d = buildings.get(w.dest);
-        if (d != null && d.id != hq && d.incoming[w.type] > 0) d.incoming[w.type]--;
+        if (d != null && !isHq(d) && d.incoming[w.type] > 0) d.incoming[w.type]--;
     }
 
     public void removeFlag(Flag f) {
-        if (f.id == hqB().flag) return;
+        Building fh = hqB(f.player);
+        if (fh != null && f.id == fh.flag) return;
         for (int d = 0; d < 6; d++) {
             Road r = roads.get(f.road[d]);
             if (r != null) removeRoad(r);
@@ -666,7 +824,7 @@ public class World implements Serializable {
     }
 
     public void removeBuilding(Building b) {
-        if (b.id == hq) return;
+        if (isHq(b)) return;
         buildings.remove(b.id);
         obj[b.node] = O_NONE;
         for (int d = 0; d < 6; d++) {
@@ -683,26 +841,30 @@ public class World implements Serializable {
     private void dismiss(Settler s) {
         if (s.target >= 0 && s.job != J_CARRIER) reserved[s.target] = false;
         settlers.remove(s.id);
-        if (s.job == J_SOLDIER) soldiers++;
-        else pool++;
+        if (s.job == J_SOLDIER) addSoldiers(s.player, 1);
+        else addPool(s.player, 1);
     }
 
     /** Abreißen, was auf dem Knoten steht. */
     public boolean removeAt(int n) {
+        return removeAt(n, 0);
+    }
+
+    public boolean removeAt(int n, int pl) {
         Building b = buildingAt(n);
         if (b != null) {
-            if (b.id == hq) return false;
+            if (isHq(b) || b.player != pl) return false;
             removeBuilding(b);
             return true;
         }
         Flag f = flagAt(n);
         if (f != null) {
-            if (f.id == hqB().flag) return false;
+            if (f.player != pl || f.id == hqB(pl).flag) return false;
             removeFlag(f);
             return true;
         }
         Road r = roadAt(n);
-        if (r != null) {
+        if (r != null && r.player == pl) {
             removeRoad(r);
             return true;
         }
@@ -711,12 +873,26 @@ public class World implements Serializable {
 
     public void recomputeTerritory() {
         java.util.Arrays.fill(owned, false);
+        if (owner == null) owner = new byte[N];
+        java.util.Arrays.fill(owner, (byte) 0);
         if (explored == null) explored = new boolean[N];
+        if (players > 1 && explored1 == null) explored1 = new boolean[N];
+        if (landCount == null) landCount = new int[2];
         for (Building b : buildings.values()) {
             int r = B_RADIUS[b.type];
             if (r <= 0 || !b.occupied) continue;
-            for (int m : around(b.node, r)) owned[m] = true;
-            for (int m : around(b.node, r + 3)) explored[m] = true;
+            boolean[] ex = exploredOf(b.player);
+            for (int m : around(b.node, r)) {
+                if (owner[m] == 0) owner[m] = (byte) (b.player + 1);
+                owned[m] = true;
+            }
+            for (int m : around(b.node, r + 3)) ex[m] = true;
+        }
+        landCount[0] = landCount[1] = 0;
+        for (int n = 0; n < N; n++) if (owner[n] > 0) landCount[owner[n] - 1]++;
+        if (mode == 1 && explored1 != null) {
+            // miteinander: beide sehen alles, was einer entdeckt hat
+            for (int n = 0; n < N; n++) explored[n] |= explored1[n];
         }
         exploredVer++;
     }
@@ -726,10 +902,10 @@ public class World implements Serializable {
         if (msgs == null) msgs = new ArrayList<>();
         if (falls == null) falls = new ArrayList<>();
         if (stats == null) stats = new ArrayList<>();
-        if (explored == null) {
-            explored = new boolean[N];
-            recomputeTerritory();
-        }
+        if (explored == null) explored = new boolean[N];
+        if (players < 1) players = 1;
+        if (players > 1 && stats1 == null) stats1 = new ArrayList<>();
+        if (owner == null || landCount == null) recomputeTerritory();
         if (producedTotal == null) producedTotal = new int[NWARES];
     }
 
@@ -738,19 +914,22 @@ public class World implements Serializable {
         if (events.size() < 64) events.add(new int[]{type, node});
     }
 
-    public void msg(String text, int node) {
+    public void msg(String text, int node, int pl) {
         Msg m = new Msg();
         m.text = text;
         m.node = node;
         m.time = time;
+        m.player = pl;
         msgs.add(m);
         msgCount++;
         while (msgs.size() > 40) msgs.remove(0);
     }
 
     /** Wie viele Leute gibt es insgesamt (frei + unterwegs + in Gebäuden). */
-    public int people() {
-        return pool + settlers.size();
+    public int people(int pl) {
+        int c = pool(pl);
+        for (Settler s : settlers.values()) if (s.player == pl) c++;
+        return c;
     }
 
     // ---------------- Wegenetz ----------------
@@ -885,7 +1064,7 @@ public class World implements Serializable {
     // ---------------- Waren ----------------
 
     int deficit(Building b, int t) {
-        if (b.id == hq) return 0;
+        if (isHq(b)) return 0;
         if (!b.done) return B_COST[b.type][t] - b.got[t] - b.incoming[t];
         if (b.type == B_SAW && t == WARE_LOG) return b.stopped ? 0 : 4 - b.stock[t] - b.incoming[t];
         return 0;
@@ -903,7 +1082,7 @@ public class World implements Serializable {
                 best = b.id;
             }
         }
-        return best >= 0 ? best : hq;
+        return best >= 0 ? best : hqId(f.player);
     }
 
     void addProduct(Flag f, int type) {
@@ -911,7 +1090,7 @@ public class World implements Serializable {
         w.type = type;
         w.dest = chooseDest(type, f);
         Building d = buildings.get(w.dest);
-        if (d != null && d.id != hq) d.incoming[type]++;
+        if (d != null && !isHq(d)) d.incoming[type]++;
         w.flag = f.id;
         f.wares.add(w);
         producedTotal[type]++;
@@ -922,8 +1101,9 @@ public class World implements Serializable {
     void route(Ware w, Flag f) {
         Building d = buildings.get(w.dest);
         if (d == null) {
-            w.dest = hq;
-            d = hqB();
+            w.dest = hqId(f.player);
+            d = hqB(f.player);
+            if (d == null) return;
         }
         if (d.flag == f.id) {
             f.wares.remove(w);
@@ -935,7 +1115,7 @@ public class World implements Serializable {
 
     void deliver(Ware w, Building d) {
         w.flag = -1;
-        if (d.id == hq) {
+        if (isHq(d)) {
             d.stock[w.type]++;
             return;
         }
@@ -946,11 +1126,12 @@ public class World implements Serializable {
 
     // ---------------- Siedler losschicken ----------------
 
-    Settler spawn(int job, int[] path) {
+    Settler spawn(int job, int[] path, int pl) {
         Settler s = new Settler();
         s.id = newId();
         s.job = job;
-        s.node = hqB().node;
+        s.player = pl;
+        s.node = hqB(pl).node;
         s.tempo = 0.85f + rng.nextFloat() * 0.3f;
         settlers.put(s.id, s);
         setPath(s, path);
@@ -980,7 +1161,7 @@ public class World implements Serializable {
     }
 
     int[] pathFromHq(Building b) {
-        int[] p = netPath(hqB().flag, b.flag);
+        int[] p = netPath(hqB(b.player).flag, b.flag);
         if (p == null) return null;
         return concat(p, b.node);
     }
@@ -996,39 +1177,41 @@ public class World implements Serializable {
     }
 
     private void requests() {
-        Building h = hqB();
         for (Building b : buildings.values()) {
-            if (b.id == hq) continue;
+            if (isHq(b)) continue;
+            int pl = b.player;
             if (!b.done && b.builder < 0) {
-                if (pool <= 0) { b.status = "Keine Siedler frei"; noPool(); continue; }
+                if (pool(pl) <= 0) { b.status = "Keine Siedler frei"; noPool(pl); continue; }
                 int[] p = pathFromHq(b);
                 if (p == null) { b.status = "Kein Weg zum Hauptquartier"; continue; }
-                Settler s = spawn(J_BUILDER, p);
+                Settler s = spawn(J_BUILDER, p, pl);
                 s.state = S_TO_SITE;
                 s.home = b.id;
                 b.builder = s.id;
-                pool--;
+                addPool(pl, -1);
                 b.status = "Bauarbeiter kommt";
             } else if (b.done && b.worker < 0) {
                 int job = jobFor(b.type);
-                if (job == J_SOLDIER ? soldiers <= 0 : pool <= 0) {
+                if (job == J_SOLDIER ? soldiers(pl) <= 0 : pool(pl) <= 0) {
                     b.status = job == J_SOLDIER ? "Keine Soldaten frei" : "Keine Siedler frei";
-                    if (job != J_SOLDIER) noPool();
+                    if (job != J_SOLDIER) noPool(pl);
                     continue;
                 }
                 int[] p = pathFromHq(b);
                 if (p == null) { b.status = "Kein Weg zum Hauptquartier"; continue; }
-                Settler s = spawn(job, p);
+                Settler s = spawn(job, p, pl);
                 s.state = S_TO_SITE;
                 s.home = b.id;
                 b.worker = s.id;
-                if (job == J_SOLDIER) soldiers--; else pool--;
+                if (job == J_SOLDIER) addSoldiers(pl, -1); else addPool(pl, -1);
                 b.status = J_NAMES[job] + " ist unterwegs";
             }
         }
         for (Road r : roads.values()) {
             boolean needHelper = r.level >= 2 && (r.helper == 0 || !settlers.containsKey(r.helper)) && r.carrier >= 0;
-            if ((r.carrier >= 0 && !needHelper) || pool <= 0) continue;
+            int pl = r.player;
+            Building h = hqB(pl);
+            if ((r.carrier >= 0 && !needHelper) || pool(pl) <= 0 || h == null) continue;
             int mid = r.path.length / 2;
             if (needHelper && mid > 1) mid--;
             int[] p = null;
@@ -1044,7 +1227,7 @@ public class World implements Serializable {
                 }
             }
             if (p == null) continue;
-            Settler s = spawn(J_CARRIER, p);
+            Settler s = spawn(J_CARRIER, p, pl);
             s.state = C_GO;
             s.home = r.id;
             s.ridx = mid;
@@ -1052,25 +1235,32 @@ public class World implements Serializable {
                 r.helper = s.id;
                 s.helper = true;
             } else r.carrier = s.id;
-            pool--;
+            addPool(pl, -1);
             roadVer++; // Wege mit Träger werden bevorzugt
         }
     }
 
-    private void noPool() {
-        if (time - noPoolT > 120f || noPoolT == 0) {
-            noPoolT = time;
-            msg("Keine freien Siedler mehr – es kommen langsam neue dazu", hqB().node);
+    private void noPool(int pl) {
+        float last = pl == 0 ? noPoolT : noPoolT1;
+        if (time - last > 120f || last == 0) {
+            if (pl == 0) noPoolT = time;
+            else noPoolT1 = time;
+            msg("Keine freien Siedler mehr – es kommen alle 20 Sekunden neue dazu", hqB(pl).node, pl);
         }
     }
 
     private void demand() {
-        Building h = hqB();
+        for (int pl = 0; pl < players; pl++) demand(pl);
+    }
+
+    private void demand(int pl) {
+        Building h = hqB(pl);
+        if (h == null) return;
         Flag hf = flags.get(h.flag);
         if (hf.wares.size() >= FLAG_CAP) return;
         Route rt = dijkstra(hf.id);
         for (Building b : buildings.values()) {
-            if (b.id == hq || !rt.dist.containsKey(b.flag)) continue;
+            if (isHq(b) || !rt.dist.containsKey(b.flag)) continue;
             for (int t = 0; t < NWARES; t++) {
                 if (deficit(b, t) > 0 && h.stock[t] > 0) {
                     h.stock[t]--;
@@ -1091,10 +1281,37 @@ public class World implements Serializable {
 
     public void update(float dt) {
         time += dt;
+        steps++;
         poolT += dt;
-        if (poolT >= 25f) {
+        if (poolT >= 20f) {
             poolT = 0;
-            if (pool < 99) pool++;
+            for (int pl = 0; pl < players; pl++) {
+                if (pool(pl) < POOL_MAX) {
+                    addPool(pl, 1);
+                    if (pool(pl) == POOL_MAX) {
+                        float last = pl == 0 ? sixT0 : sixT1;
+                        if (time - last > 300f || last == 0) {
+                            if (pl == 0) sixT0 = time;
+                            else sixT1 = time;
+                            msg("Six-seven! Das Lager ist voll – 67 freie Siedler", hqB(pl).node, pl);
+                        }
+                    }
+                }
+            }
+        }
+        if (mode == 2 && winner == 0) {
+            goalT += dt;
+            if (goalT >= 1f) {
+                goalT = 0;
+                for (int pl = 0; pl < players; pl++) {
+                    if (goalProgress(pl) >= goalValue) {
+                        winner = pl + 1;
+                        msg("Spieler " + P_NAMES[pl] + " hat das Ziel erreicht und gewinnt!", hqB(pl).node, -1);
+                        ev(E_DONE, -1);
+                        break;
+                    }
+                }
+            }
         }
         requestT += dt;
         if (requestT >= 1f) {
@@ -1131,19 +1348,21 @@ public class World implements Serializable {
         statT += dt;
         if (statT >= 30f || stats.isEmpty()) {
             statT = 0;
-            int land = 0;
-            for (boolean o : owned) if (o) land++;
-            Building h = hqB();
-            stats.add(new int[]{(int) time, h.stock[0], h.stock[1], h.stock[2], land, people()});
-            if (stats.size() > 480) {
-                // ältere Hälfte ausdünnen
-                ArrayList<int[]> n = new ArrayList<>();
-                for (int i = 0; i < stats.size(); i++) if (i % 2 == 0 || i >= stats.size() / 2) n.add(stats.get(i));
-                stats = n;
+            for (int pl = 0; pl < players; pl++) {
+                Building h = hqB(pl);
+                ArrayList<int[]> st = statsOf(pl);
+                st.add(new int[]{(int) time, h.stock[0], h.stock[1], h.stock[2], landCount[pl], people(pl)});
+                if (st.size() > 480) {
+                    // ältere Hälfte ausdünnen
+                    ArrayList<int[]> n = new ArrayList<>();
+                    for (int i = 0; i < st.size(); i++) if (i % 2 == 0 || i >= st.size() / 2) n.add(st.get(i));
+                    if (pl == 0) stats = n;
+                    else stats1 = n;
+                }
             }
         }
         for (Building b : buildings.values()) {
-            if (!b.done || b.id == hq || b.type >= B_GUARD) continue;
+            if (!b.done || isHq(b) || b.type >= B_GUARD) continue;
             Settler wk = settlers.get(b.worker);
             if (wk == null || wk.state == S_TO_SITE || b.stopped) continue;
             float target = b.problem ? 0f : 1f;
@@ -1181,7 +1400,7 @@ public class World implements Serializable {
             Road r = roads.get(s.home);
             if (r == null) {
                 settlers.remove(s.id);
-                pool++;
+                addPool(s.player, 1);
                 return;
             }
             carrier(s, r);
@@ -1189,8 +1408,8 @@ public class World implements Serializable {
         }
         if (s.state == S_RETURN) {
             settlers.remove(s.id);
-            if (s.job == J_SOLDIER) soldiers++;
-            else pool++;
+            if (s.job == J_SOLDIER) addSoldiers(s.player, 1);
+            else addPool(s.player, 1);
             return;
         }
         Building b = buildings.get(s.home);
@@ -1212,7 +1431,7 @@ public class World implements Serializable {
                         b.occupied = true;
                         b.status = "Besetzt – das Land wächst";
                         recomputeTerritory();
-                        msg(B_NAMES[b.type] + " besetzt – dein Land ist gewachsen", b.node);
+                        msg(B_NAMES[b.type] + " besetzt – dein Land ist gewachsen", b.node, b.player);
                         ev(E_LAND, b.node);
                     } else b.status = "Arbeitet";
                 }
@@ -1236,7 +1455,7 @@ public class World implements Serializable {
                     b.done = true;
                     b.builder = -1;
                     b.status = "Fertig";
-                    msg(B_NAMES[b.type] + " ist fertig gebaut", b.node);
+                    msg(B_NAMES[b.type] + " ist fertig gebaut", b.node, b.player);
                     ev(E_DONE, b.node);
                     sendHome(s, b);
                 }
@@ -1273,7 +1492,7 @@ public class World implements Serializable {
                     b.problem = true;
                     if ((b.noticed & 1) == 0) {
                         b.noticed |= 1;
-                        msg(B_NAMES[b.type] + ": " + b.status, b.node);
+                        msg(B_NAMES[b.type] + ": " + b.status, b.node, b.player);
                     }
                     s.timer = 4f;
                     break;
@@ -1383,14 +1602,15 @@ public class World implements Serializable {
         s.state = S_RETURN;
         s.visible = true;
         s.home = -1;
-        int[] p = netPath(from.flag, hqB().flag);
+        Building h = hqB(s.player);
+        int[] p = netPath(from.flag, h.flag);
         if (p == null) {
             settlers.remove(s.id);
-            if (s.job == J_SOLDIER) soldiers++;
-            else pool++;
+            if (s.job == J_SOLDIER) addSoldiers(s.player, 1);
+            else addPool(s.player, 1);
             return;
         }
-        setPath(s, concat(p, hqB().node));
+        setPath(s, concat(p, h.node));
     }
 
     public int treeKindOf(int n) {
@@ -1494,7 +1714,7 @@ public class World implements Serializable {
                 Flag f = endFlag(r, s.target);
                 Ware w = s.carry;
                 Building d = buildings.get(w.dest);
-                boolean deliverHere = d == null ? hqB().flag == f.id : d.flag == f.id;
+                boolean deliverHere = d == null ? hqB(r.player).flag == f.id : d.flag == f.id;
                 if (deliverHere || f.wares.size() < FLAG_CAP) {
                     s.carry = null;
                     w.res = -1;
@@ -1538,12 +1758,12 @@ public class World implements Serializable {
         if (r.level == 0 && r.traffic >= 20f) {
             r.level = 1;
             roadVer++;
-            msg("Ein viel benutzter Weg wurde gepflastert – dort geht es schneller", r.path[r.path.length / 2]);
+            msg("Ein viel benutzter Weg wurde gepflastert – dort geht es schneller", r.path[r.path.length / 2], r.player);
             ev(E_PAVE, r.path[r.path.length / 2]);
         } else if (r.level == 1 && r.traffic >= 38f) {
             r.level = 2;
             roadVer++;
-            msg("Viel Verkehr – ein zweiter Träger hilft auf diesem Weg", r.path[r.path.length / 2]);
+            msg("Viel Verkehr – ein zweiter Träger hilft auf diesem Weg", r.path[r.path.length / 2], r.player);
             ev(E_PAVE, r.path[r.path.length / 2]);
         }
     }
@@ -1585,5 +1805,18 @@ public class World implements Serializable {
         int c = 0;
         for (Building b : buildings.values()) if (b.type == type && (!doneOnly || b.done)) c++;
         return c;
+    }
+
+    public int countBuildings(int type, boolean doneOnly, int pl) {
+        int c = 0;
+        for (Building b : buildings.values()) if (b.player == pl && b.type == type && (!doneOnly || b.done)) c++;
+        return c;
+    }
+
+    /** Fortschritt beim Wettbauen */
+    public int goalProgress(int pl) {
+        if (goalType == 1) return landCount[pl];
+        Building h = hqB(pl);
+        return h == null ? 0 : h.stock[WARE_BOARD];
     }
 }

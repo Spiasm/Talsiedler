@@ -55,6 +55,7 @@ public class GameView extends View {
         if (first) {
             ren.zoom = Math.max(1.2f, h / 520f);
             if (world != null) ren.centerOn(world, world.hqB().node);
+            ren.warmSprites();
         }
         ren.clampCam();
     }

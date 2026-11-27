@@ -543,12 +543,16 @@ public class Hud {
             text(c, World.B_NAMES[b.type] + (b.done ? "" : " (Baustelle)"), x, y, 24 * u, dark, true, Paint.Align.LEFT);
             y += 14 * u;
             c.save();
-            c.translate(x + in / 2, y + 92 * u);
-            c.scale(2.6f * u, 2.6f * u);
+            float[] ib = Art.BOX[b.type];
+            float isc = Math.min(2.6f * u, Math.min(94 * u / (ib[3] - ib[1]), in * 0.8f / (ib[2] - ib[0])));
+            c.translate(x + in / 2, y + 4 * u - ib[1] * isc);
+            c.scale(isc, isc);
             ren.bannerFor(me);
+            ren.scaleHint = isc;
             ren.buildingSprite(c, b.type, 0, 0, now);
+            ren.scaleHint = 0;
             c.restore();
-            y += 120 * u;
+            y += 112 * u;
             if (!World.isHq(b)) y = wrap(c, b.status, x, y, in, 19 * u, 0xFF5D4037) + 6 * u;
             if (!b.done) {
                 for (int t = 1; t < 3; t++) {
@@ -748,12 +752,14 @@ public class Hud {
                 c.drawRoundRect(br, 12 * u, 12 * u, p);
                 p.setStyle(Paint.Style.FILL);
                 c.save();
-                c.translate(bx + cw / 2, yy + 54 * u);
-                float sc = (type == World.B_TOWER || type == World.B_MILL || type == World.B_SMELTER || type == World.B_SCOUT ? 1.1f
-                        : World.B_SIZE[type] == 2 ? 1.2f : 1.5f) * u;
+                float[] ib = Art.BOX[type];
+                float sc = Math.min(cw * 0.92f / (ib[2] - ib[0]), 58 * u / (ib[3] - ib[1]));
+                c.translate(bx + cw / 2, yy + 4 * u - ib[1] * sc);
                 c.scale(sc, sc);
                 ren.bannerFor(me);
+                ren.scaleHint = sc;
                 ren.buildingSprite(c, type, 0, 0, now);
+                ren.scaleHint = 0;
                 c.restore();
                 text(c, World.B_NAMES[type], bx + cw / 2, yy + 76 * u, 15 * u, ok ? dark : 0xFF8A7D66, true, Paint.Align.CENTER);
                 int[] cost = World.B_COST[type];

@@ -889,257 +889,144 @@ public class Renderer {
 
     private void banner(Canvas c, float x, float y, float t) {
         p.setColor(0xFF3E2A1C);
-        c.drawRect(x - 0.6f, y - 12, x + 0.6f, y, p);
-        float wv = (float) Math.sin(t * 5 + x);
+        c.drawRect(x - 0.45f, y - 12, x + 0.45f, y, p);
+        p.setColor(0xFFD8B040);
+        c.drawCircle(x, y - 12.4f, 0.8f, p);
+        float w1 = (float) Math.sin(t * 5 + x), w2 = (float) Math.sin(t * 5 + x - 1.5f);
         path.reset();
-        path.moveTo(x + 0.6f, y - 12);
-        path.lineTo(x + 8, y - 11 + wv);
-        path.lineTo(x + 0.6f, y - 7.5f);
+        path.moveTo(x + 0.45f, y - 11.5f);
+        path.quadTo(x + 3.5f, y - 12.2f + w1 * 0.8f, x + 7.5f, y - 11.2f + w2);
+        path.lineTo(x + 6.6f, y - 9.3f + w2);
+        path.lineTo(x + 7.5f, y - 7.4f + w2);
+        path.quadTo(x + 3.5f, y - 8.2f + w1 * 0.8f, x + 0.45f, y - 7.6f);
         path.close();
         p.setColor(pc);
         c.drawPath(path, p);
+        p.setColor(0x40000000);
+        c.drawRect(x + 0.45f, y - 9.6f + w1 * 0.4f, x + 6.8f, y - 9.0f + w2 * 0.8f, p);
+        p.setColor(0xCCFFFFFF);
+        c.drawCircle(x + 3.4f, y - 9.7f + w1 * 0.7f, 0.9f, p);
+    }
+
+    // ---------- Gebäude-Bilder (vorgezeichnet) ----------
+    private Art art;
+    private static final float[] LV = {1.7f, 2.7f, 3.8f, 5.2f};
+    private final Bitmap[][] spr = new Bitmap[LV.length][World.NB];
+    /** Maßstab, in dem das nächste Gebäudebild erscheint (0 = Kartenzoom) */
+    public float scaleHint = 0;
+    /** Drehwinkel des Sägeblatts */
+    private float sawAngle = 0;
+
+    private synchronized Bitmap sprite(int type, int lv) {
+        Bitmap b = spr[lv][type];
+        if (b != null) return b;
+        if (art == null) art = new Art(new Renderer());
+        float[] bx = Art.BOX[type];
+        float ss = LV[lv];
+        int w = (int) Math.ceil((bx[2] - bx[0]) * ss), h = (int) Math.ceil((bx[3] - bx[1]) * ss);
+        b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        Canvas bc = new Canvas(b);
+        bc.scale(ss, ss);
+        bc.translate(-bx[0], -bx[1]);
+        art.draw(bc, type);
+        spr[lv][type] = b;
+        return b;
+    }
+
+    private boolean warming;
+
+    /** Alle Gebäudebilder im Hintergrund vorzeichnen, damit es später nicht ruckelt */
+    public void warmSprites() {
+        if (warming) return;
+        warming = true;
+        final int first = level(zoom);
+        Thread th = new Thread(new Runnable() {
+            public void run() {
+                try {
+                    for (int t = 0; t < World.NB; t++) sprite(t, first);
+                    for (int lv = 0; lv < LV.length; lv++)
+                        for (int t = 0; t < World.NB; t++) sprite(t, lv);
+                } catch (Throwable e) {
+                    // zur Not wird beim Zeichnen nachgeholt
+                }
+            }
+        }, "Gebaeudebilder");
+        th.setPriority(Thread.MIN_PRIORITY);
+        th.start();
+    }
+
+    private static int level(float s) {
+        int lv = 0;
+        while (lv < LV.length - 1 && LV[lv] < s) lv++;
+        return lv;
     }
 
     public void buildingSprite(Canvas c, int type, float x, float y, float t) {
-        switch (type) {
-            case World.B_HQ:
-                tower(c, x - 17, y - 2, 13, 34, 0xFFB8AE9C);
-                house(c, x + 2, y + 2, 30, 20, 13, 0xFFD8CBB0, 0xFFB5452E);
-                tower(c, x + 22, y - 1, 11, 28, 0xFFB0A692);
-                banner(c, x - 17, y - 38, t);
-                banner(c, x + 22, y - 31, t);
-                break;
-            case World.B_WOOD:
-                house(c, x, y, 18, 11, 9, 0xFF9B6B3E, 0xFF5B3B22);
-                ware(c, World.WARE_LOG, x - 13, y - 1, 0.9f);
-                ware(c, World.WARE_LOG, x - 13, y - 4, 0.9f);
-                p.setColor(0xFF777777);
-                c.drawRect(x + 4, y - 9, x + 7, y - 6, p);
-                break;
-            case World.B_FOREST:
-                house(c, x, y, 18, 11, 9, 0xFFC9A574, 0xFF3F7D34);
-                tree(c, x - 13, y, 1, 1, t, 3);
-                break;
-            case World.B_QUARRY:
-                house(c, x, y, 18, 11, 8, 0xFFA8A49C, 0xFF6D5D50);
-                stones(c, x - 14, y + 1, 2, 1);
-                break;
-            case World.B_SAW: {
-                house(c, x, y, 28, 15, 11, 0xFFB98A55, 0xFFA13D2A);
-                p.setColor(0xFFD0D0D0);
-                c.drawCircle(x - 7, y - 9, 3.5f, p);
-                p.setColor(0xFF7A7A7A);
-                c.drawCircle(x - 7, y - 9, 1.2f, p);
-                for (int i = 0; i < 3; i++) ware(c, World.WARE_BOARD, x - 20, y - 1 - i * 2.4f, 0.9f);
-                break;
+        int lv = level(scaleHint > 0 ? scaleHint : zoom);
+        Bitmap b = sprite(type, lv);
+        float[] bx = Art.BOX[type];
+        float ss = LV[lv];
+        c.save();
+        c.translate(x + bx[0], y + bx[1]);
+        c.scale(1f / ss, 1f / ss);
+        c.drawBitmap(b, 0, 0, bmpPaint);
+        c.restore();
+        // bewegliche Teile
+        float[] bn = Art.BANNERS[type];
+        for (int i = 0; i + 1 < bn.length; i += 2) banner(c, x + bn[i], y + bn[i + 1], t + i);
+        if (type == World.B_MILL) sails(c, x + Art.MILL_HUB[0], y + Art.MILL_HUB[1]);
+        if (type == World.B_SAW) sawBlade(c, x + Art.SAW_BLADE[0], y + Art.SAW_BLADE[1]);
+    }
+
+    private void sails(Canvas c, float hx, float hy) {
+        for (int k = 0; k < 4; k++) {
+            float a = millAngle + k * (float) Math.PI / 2;
+            float ca = (float) Math.cos(a), sa = (float) Math.sin(a);
+            float ox = -sa, oy = ca;
+            float len = 17;
+            // Flügelfläche mit Gitter
+            path.reset();
+            path.moveTo(hx + ca * 4, hy + sa * 4);
+            path.lineTo(hx + ca * len, hy + sa * len);
+            path.lineTo(hx + ca * len + ox * 3.6f, hy + sa * len + oy * 3.6f);
+            path.lineTo(hx + ca * 4 + ox * 3.2f, hy + sa * 4 + oy * 3.2f);
+            path.close();
+            p.setColor(0xD8EFE6D2);
+            c.drawPath(path, p);
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeWidth(0.25f);
+            p.setColor(0xFF7A5A40);
+            c.drawPath(path, p);
+            for (int j = 1; j < 6; j++) {
+                float f = 4 + (len - 4) * j / 6f;
+                c.drawLine(hx + ca * f, hy + sa * f, hx + ca * f + ox * 3.4f, hy + sa * f + oy * 3.4f, p);
             }
-            case World.B_GUARD:
-                tower(c, x, y, 13, 22, 0xFFB5AB98);
-                banner(c, x, y - 25, t);
-                break;
-            case World.B_TOWER:
-                tower(c, x, y, 18, 34, 0xFFA89E8A);
-                banner(c, x, y - 37, t);
-                break;
-            case World.B_FISH:
-                house(c, x, y, 18, 11, 9, 0xFFB0855A, 0xFF4E6E8E);
-                p.setStyle(Paint.Style.STROKE);
-                p.setStrokeWidth(0.5f);
-                p.setColor(0xFF6D5A44);
-                for (int i = 0; i < 4; i++) c.drawLine(x - 15 + i * 1.6f, y - 10, x - 15 + i * 1.6f, y - 2, p);
-                for (int i = 0; i < 4; i++) c.drawLine(x - 15, y - 10 + i * 2.6f, x - 10, y - 10 + i * 2.6f, p);
-                p.setStyle(Paint.Style.FILL);
-                ware(c, World.WARE_FISH, x + 12, y - 3, 0.7f);
-                break;
-            case World.B_HUNT:
-                house(c, x, y, 18, 11, 9, 0xFF8B6A4A, 0xFF3E5A2E);
-                p.setStyle(Paint.Style.STROKE);
-                p.setStrokeWidth(0.8f);
-                p.setColor(0xFFE8DCC8);
-                c.drawLine(x - 2, y - 13, x - 4, y - 17, p);
-                c.drawLine(x - 3, y - 15, x - 5.5f, y - 15.5f, p);
-                c.drawLine(x + 2, y - 13, x + 4, y - 17, p);
-                c.drawLine(x + 3, y - 15, x + 5.5f, y - 15.5f, p);
-                p.setStyle(Paint.Style.FILL);
-                break;
-            case World.B_WELL: {
-                p.setColor(0x40000000);
-                rf.set(x - 8, y - 3, x + 9, y + 3);
-                c.drawOval(rf, p);
-                p.setColor(0xFF8F8A82);
-                rf.set(x - 6, y - 6, x + 6, y + 1);
-                c.drawRect(x - 6, y - 6, x + 6, y - 1, p);
-                c.drawOval(rf, p);
-                p.setColor(0xFFA9A49C);
-                rf.set(x - 6, y - 8, x + 6, y - 4);
-                c.drawOval(rf, p);
-                p.setColor(0xFF2D5D8A);
-                rf.set(x - 4.5f, y - 7.4f, x + 4.5f, y - 4.6f);
-                c.drawOval(rf, p);
-                p.setColor(0xFF6D4C41);
-                c.drawRect(x - 5.5f, y - 18, x - 4.5f, y - 6, p);
-                c.drawRect(x + 4.5f, y - 18, x + 5.5f, y - 6, p);
-                path.reset();
-                path.moveTo(x - 8, y - 16);
-                path.lineTo(x, y - 22);
-                path.lineTo(x + 8, y - 16);
-                path.close();
-                p.setColor(0xFF8E3B2A);
-                c.drawPath(path, p);
-                p.setColor(0xFF8D6E4A);
-                c.drawRect(x - 1.2f, y - 13, x + 1.2f, y - 10.5f, p);
-                break;
-            }
-            case World.B_FARM:
-                house(c, x + 3, y, 24, 13, 11, 0xFFE6D3A8, 0xFFA0522D);
-                house(c, x - 15, y + 1, 10, 9, 7, 0xFFC9A574, 0xFF8E6A3A);
-                ware(c, World.WARE_GRAIN, x + 19, y - 1, 0.9f);
-                break;
-            case World.B_MILL: {
-                p.setColor(0x40000000);
-                rf.set(x - 9, y - 3, x + 11, y + 4);
-                c.drawOval(rf, p);
-                path.reset();
-                path.moveTo(x - 8, y);
-                path.lineTo(x - 5, y - 24);
-                path.lineTo(x + 5, y - 24);
-                path.lineTo(x + 8, y);
-                path.close();
-                p.setColor(0xFFE0D6C2);
-                c.drawPath(path, p);
-                p.setColor(0xFFC8BCA6);
-                c.drawRect(x + 2, y - 23, x + 7.5f, y, p);
-                path.reset();
-                path.moveTo(x - 6.5f, y - 24);
-                path.lineTo(x, y - 30);
-                path.lineTo(x + 6.5f, y - 24);
-                path.close();
-                p.setColor(0xFF5D4037);
-                c.drawPath(path, p);
-                p.setColor(0xFF4A2E1A);
-                c.drawRect(x - 2, y - 6, x + 2, y, p);
-                // Flügel
-                float hx = x, hy = y - 22;
-                p.setStyle(Paint.Style.STROKE);
-                for (int k = 0; k < 4; k++) {
-                    float a = millAngle + k * (float) Math.PI / 2;
-                    float ex = hx + (float) Math.cos(a) * 15, ey = hy + (float) Math.sin(a) * 15;
-                    p.setStrokeWidth(1f);
-                    p.setColor(0xFF6D4C41);
-                    c.drawLine(hx, hy, ex, ey, p);
-                    p.setStrokeWidth(3.2f);
-                    p.setColor(0xDDF5F0E6);
-                    float mx = hx + (float) Math.cos(a) * 6, my = hy + (float) Math.sin(a) * 6;
-                    float ox = -(float) Math.sin(a) * 1.8f, oy = (float) Math.cos(a) * 1.8f;
-                    c.drawLine(mx + ox, my + oy, ex + ox, ey + oy, p);
-                }
-                p.setStyle(Paint.Style.FILL);
-                p.setColor(0xFF4E342E);
-                c.drawCircle(hx, hy, 1.4f, p);
-                break;
-            }
-            case World.B_BAKERY:
-                house(c, x, y, 26, 14, 11, 0xFFE8C9A0, 0xFFB5452E);
-                p.setColor(0xFF8F8A82);
-                c.drawRect(x + 9, y - 30, x + 12, y - 18, p);
-                ware(c, World.WARE_BREAD, x - 7, y - 9, 0.8f);
-                break;
-            case World.B_PIGS:
-                house(c, x + 4, y, 22, 12, 10, 0xFFC9A574, 0xFF7B5A3A);
-                p.setStyle(Paint.Style.STROKE);
-                p.setStrokeWidth(0.8f);
-                p.setColor(0xFF8D6E4A);
-                c.drawLine(x - 20, y + 2, x - 7, y + 2, p);
-                c.drawLine(x - 20, y - 2, x - 7, y - 2, p);
-                for (int i = 0; i < 4; i++) c.drawLine(x - 20 + i * 4.3f, y - 3.5f, x - 20 + i * 4.3f, y + 3, p);
-                p.setStyle(Paint.Style.FILL);
-                ware(c, World.WARE_PIG, x - 13, y, 0.8f);
-                break;
-            case World.B_BUTCHER:
-                house(c, x, y, 24, 14, 11, 0xFFF0E0D0, 0xFF8E2A2A);
-                ware(c, World.WARE_MEAT, x - 6, y - 9, 0.8f);
-                break;
-            case World.B_COAL:
-            case World.B_IRON:
-            case World.B_GOLD:
-            case World.B_GRANITE: {
-                int[] ore = {World.WARE_COAL, World.WARE_IRONORE, World.WARE_GOLD, World.WARE_STONE};
-                p.setColor(0x40000000);
-                rf.set(x - 10, y - 3, x + 10, y + 3);
-                c.drawOval(rf, p);
-                p.setColor(0xFF7A6A58);
-                path.reset();
-                path.moveTo(x - 10, y);
-                path.lineTo(x - 6, y - 12);
-                path.lineTo(x + 6, y - 14);
-                path.lineTo(x + 11, y);
-                path.close();
-                c.drawPath(path, p);
-                p.setColor(0xFF1E1A16);
-                rf.set(x - 4.5f, y - 10, x + 4.5f, y + 2);
-                c.drawRoundRect(rf, 4, 4, p);
-                p.setColor(0xFF8D6E4A);
-                c.drawRect(x - 5.5f, y - 10, x - 4, y, p);
-                c.drawRect(x + 4, y - 10, x + 5.5f, y, p);
-                c.drawRect(x - 6, y - 11.5f, x + 6, y - 9.8f, p);
-                // Lore
-                p.setColor(0xFF5D4037);
-                c.drawRect(x + 7, y - 3, x + 13, y, p);
-                p.setColor(0xFF333333);
-                c.drawCircle(x + 8.2f, y + 0.5f, 0.9f, p);
-                c.drawCircle(x + 11.8f, y + 0.5f, 0.9f, p);
-                ware(c, ore[type - World.B_COAL], x + 10, y - 3.6f, 0.6f);
-                break;
-            }
-            case World.B_SMELTER:
-                house(c, x - 2, y, 24, 14, 9, 0xFF9E958A, 0xFF5A4A40);
-                p.setColor(0xFF7A716A);
-                c.drawRect(x + 7, y - 34, x + 12, y - 14, p);
-                p.setColor(0xFFFF8A3D);
-                c.drawRect(x - 8, y - 7, x - 4, y - 3, p);
-                break;
-            case World.B_TOOLS:
-                house(c, x, y, 26, 14, 11, 0xFFB98A55, 0xFF4E5A6E);
-                p.setColor(0xFF455A64);
-                c.drawRect(x - 20, y - 4, x - 13, y - 2.5f, p);
-                c.drawRect(x - 18, y - 2.5f, x - 15, y, p);
-                ware(c, World.T_HAMMER, x + 16, y - 3, 0.7f);
-                break;
-            case World.B_STORE:
-                house(c, x, y, 32, 17, 13, 0xFFA8783E, 0xFF6B4A2A);
-                p.setColor(0xFF8D6E4A);
-                for (int i = 0; i < 3; i++) {
-                    c.drawRect(x - 24 + i * 2, y - 5 - i * 4, x - 18 + i * 2, y - 1 - i * 4, p);
-                }
-                p.setColor(0xFF6D4C41);
-                c.drawRect(x - 24, y - 3.2f, x - 18, y - 2.6f, p);
-                banner(c, x - 14, y - 17, t);
-                break;
-            case World.B_SCOUT: {
-                p.setColor(0x40000000);
-                rf.set(x - 8, y - 3, x + 9, y + 3);
-                c.drawOval(rf, p);
-                p.setColor(0xFF6D4C41);
-                p.setStyle(Paint.Style.STROKE);
-                p.setStrokeWidth(1.2f);
-                c.drawLine(x - 6, y, x - 4, y - 20, p);
-                c.drawLine(x + 6, y, x + 4, y - 20, p);
-                c.drawLine(x - 5, y - 8, x + 5, y - 14, p);
-                c.drawLine(x + 5, y - 8, x - 5, y - 14, p);
-                p.setStyle(Paint.Style.FILL);
-                p.setColor(0xFF9B6B3E);
-                c.drawRect(x - 7, y - 23, x + 7, y - 19, p);
-                path.reset();
-                path.moveTo(x - 8, y - 23);
-                path.lineTo(x, y - 30);
-                path.lineTo(x + 8, y - 23);
-                path.close();
-                p.setColor(0xFF3F7D34);
-                c.drawPath(path, p);
-                banner(c, x, y - 30, t);
-                break;
-            }
+            c.drawLine(hx + ca * 4 + ox * 1.7f, hy + sa * 4 + oy * 1.7f, hx + ca * len + ox * 1.8f, hy + sa * len + oy * 1.8f, p);
+            p.setStrokeWidth(0.9f);
+            p.setColor(0xFF5D4037);
+            c.drawLine(hx, hy, hx + ca * (len + 0.5f), hy + sa * (len + 0.5f), p);
+            p.setStyle(Paint.Style.FILL);
         }
+        p.setColor(0xFF3E2A22);
+        c.drawCircle(hx, hy, 1.5f, p);
+        p.setColor(0xFF8A6A50);
+        c.drawCircle(hx - 0.4f, hy - 0.4f, 0.6f, p);
+    }
+
+    private void sawBlade(Canvas c, float bx, float by) {
+        p.setColor(0xFFD8D8DC);
+        c.drawCircle(bx, by, 3.4f, p);
+        p.setColor(0xFF9A9AA0);
+        for (int k = 0; k < 10; k++) {
+            float aa = sawAngle + k * 0.628f;
+            c.drawCircle(bx + (float) Math.cos(aa) * 3.3f, by + (float) Math.sin(aa) * 3.3f, 0.45f, p);
+        }
+        p.setColor(0xFFB8B8BE);
+        c.drawCircle(bx, by, 2.2f, p);
+        p.setColor(0xFF606066);
+        c.drawCircle(bx, by, 0.8f, p);
+        p.setColor(0x60FFFFFF);
+        c.drawCircle(bx - 1.1f, by - 1.1f, 0.6f, p);
     }
 
     /** Drehwinkel der Mühlenflügel beim nächsten Zeichnen */
@@ -1152,37 +1039,39 @@ public class Renderer {
             World.Settler wk = w.settlers.get(b.worker);
             boolean busy = wk != null && wk.state == World.S_SAW;
             millAngle = b.type == World.B_MILL && busy ? t * 2.2f : 0.4f;
+            boolean sawing = b.type == World.B_SAW && wk != null && wk.state == World.S_SAW;
+            sawAngle = sawing ? t * 14f : 0;
             buildingSprite(c, b.type, x, y, t);
             millAngle = 0.4f;
+            sawAngle = 0;
+            boolean working = wk != null && !b.stopped && !b.problem;
             if (b.type == World.B_SMELTER && busy) {
                 float g = 0.6f + 0.4f * (float) Math.sin(t * 9);
-                p.setColor(((int) (0xC0 * g) << 24) | 0xFF6A00);
-                c.drawCircle(x + 9.5f, y - 35, 2.5f + g, p);
+                p.setColor(((int) (0x90 * g) << 24) | 0xFF6A00);
+                c.drawCircle(x + Art.SMELT_GLOW[0], y + Art.SMELT_GLOW[1], 2.6f + g * 0.6f, p);
+                p.setColor(((int) (0xD0 * g) << 24) | 0xFFC040);
+                c.drawCircle(x + Art.SMELT_GLOW[0], y + Art.SMELT_GLOW[1] + 0.8f, 1.5f, p);
             }
-            if (b.type == World.B_SAW && wk != null && wk.state == World.S_SAW) {
-                // drehendes Sägeblatt und Sägemehl
-                float a = t * 14f;
-                p.setColor(0xFFE8E8E8);
-                c.drawCircle(x - 7, y - 9, 3.8f, p);
-                p.setColor(0xFF707070);
+            if (b.type == World.B_BAKERY && working) {
+                float g = 0.6f + 0.4f * (float) Math.sin(t * 5);
+                p.setColor(((int) (0xA0 * g) << 24) | 0xFF7A20);
+                c.drawCircle(x + Art.OVEN_GLOW[0], y + Art.OVEN_GLOW[1], 1.8f + g * 0.4f, p);
+            }
+            if (sawing) {
+                // Sägemehl
                 for (int k = 0; k < 6; k++) {
-                    float aa = a + k * 1.047f;
-                    c.drawCircle(x - 7 + (float) Math.cos(aa) * 3.4f, y - 9 + (float) Math.sin(aa) * 3.4f, 0.7f, p);
-                }
-                c.drawCircle(x - 7, y - 9, 1.2f, p);
-                for (int k = 0; k < 5; k++) {
-                    float f = ((t * 1.3f + k * 0.2f) % 1f);
+                    float f = ((t * 1.3f + k * 0.17f) % 1f);
                     p.setColor(0xCCE7CF9A);
-                    c.drawCircle(x - 9 - f * 6 + (float) Math.sin(k * 3 + t * 5) * 1.5f, y - 7 + f * 7, 0.8f, p);
+                    c.drawCircle(x + Art.SAW_BLADE[0] - 1 - f * 5 + (float) Math.sin(k * 3 + t * 5) * 1.2f, y + Art.SAW_BLADE[1] + 2 + f * 5, 0.6f, p);
                 }
-            } else if (World.hasUtil(b.type) && !World.isMine(b.type) && b.type != World.B_WELL && b.type != World.B_SCOUT && b.type != World.B_MILL) {
-                // Rauch aus dem Schornstein, wenn gearbeitet wird
-                if (wk != null && !b.stopped && !b.problem) {
-                    for (int k = 0; k < 3; k++) {
-                        float f = ((t * 0.35f + k / 3f) % 1f);
-                        p.setColor(((int) (0x70 * (1 - f)) << 24) | 0xDDDDDD);
-                        c.drawCircle(x + 6 + f * 5 + (float) Math.sin(t + k) * 1.5f, y - 22 - f * 14, 1.5f + f * 2.5f, p);
-                    }
+            }
+            float[] sm = Art.SMOKE[b.type];
+            if (sm != null && working && World.hasUtil(b.type)) {
+                for (int k = 0; k < 4; k++) {
+                    float f = ((t * 0.35f + k / 4f) % 1f);
+                    int a = (int) (0x80 * (1 - f) * Math.min(1, f * 6));
+                    p.setColor((a << 24) | (b.type == World.B_SMELTER ? 0x9A9A9A : 0xDDDDDD));
+                    c.drawCircle(x + sm[0] + f * 6 + (float) Math.sin(t * 1.3f + k) * 1.4f, y + sm[1] - f * 15, 1.2f + f * 3f, p);
                 }
             }
             if (b.stopped) {
@@ -1212,7 +1101,8 @@ public class Renderer {
         if (pr > 0.02f) {
             float top = y - 40;
             c.save();
-            c.clipRect(x - 40, y + 8 - (48 * pr), x + 40, y + 8);
+            float[] bxx = Art.BOX[b.type];
+            c.clipRect(x + bxx[0], y + bxx[3] - (bxx[3] - bxx[1]) * pr, x + bxx[2], y + bxx[3]);
             buildingSprite(c, b.type, x, y, t);
             c.restore();
             if (pr < 1) {

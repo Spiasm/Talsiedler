@@ -1392,6 +1392,31 @@ public class Renderer {
         float tp = s.tempo();
         int car = s.carried();
 
+        // ---- arbeitslos und traurig auf dem Heimweg ----
+        if (s.sad) {
+            float sob = (float) Math.sin(t * 15 + s.id);
+            beginFigure(c, x, y, face, shirt, hat, legs * 0.5f, 0, 16 + sob * 3, 25, false);
+            arm(c, 166, shirt);
+            endFigure(c);
+            for (int k = 0; k < 4; k++) {
+                float f = frac(t * 1.5f + k / 4f + s.id * 0.13f);
+                float side = (k & 1) == 0 ? 1 : -0.6f;
+                float tx = x + face * side * (2.2f + f * 2.4f), ty = y - 14f + f * 6f + f * f * 4f;
+                int a = (int) (255 * (1 - f * f));
+                p.setColor((a << 24) | 0x2F8FEA);
+                c.drawCircle(tx, ty, 1.0f - f * 0.3f, p);
+                path.reset();
+                path.moveTo(tx - 0.8f, ty - 0.3f);
+                path.lineTo(tx, ty - 2f);
+                path.lineTo(tx + 0.8f, ty - 0.3f);
+                path.close();
+                c.drawPath(path, p);
+                p.setColor((a << 24) | 0xFFFFFF);
+                c.drawCircle(tx - 0.3f, ty - 0.3f, 0.3f, p);
+            }
+            return;
+        }
+
         // ---- bei der Arbeit ----
         if (s.state == World.S_WORK && !walk) {
             float ph = s.workPhase;

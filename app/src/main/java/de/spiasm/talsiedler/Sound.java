@@ -11,7 +11,7 @@ import java.util.Random;
 
 /** Spielt die erzeugten Töne ab: Arbeitsgeräusche an der richtigen Stelle, Umgebung, Knöpfe. */
 public class Sound {
-    private static final int VERSION = 3;
+    private static final int VERSION = 4;
     private final SoundPool pool;
     private final int[] ids = new int[Synth.COUNT];
     private final HashSet<Integer> ready = new HashSet<>();
@@ -87,6 +87,7 @@ public class Sound {
             case Synth.S_BOW: return 0.55f;
             case Synth.S_SWISH: return 0.45f;
             case Synth.S_OINK: return 0.4f;
+            case Synth.S_SOB: return 0.6f;
             default: return 0.8f;
         }
     }

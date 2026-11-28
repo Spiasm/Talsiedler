@@ -634,11 +634,17 @@ public class Hud {
             boolean mountainNear = false;
             for (int m : World.around(f.node, 6)) if (w.terrain[m] == World.T_MOUNTAIN) mountainNear = true;
             if (mountainNear) y = wrap(c, "Am Berg? Schick einen Geologen – er sucht Bodenschätze und stellt Schilder auf.", x, y + 6 * u, in, 17 * u, 0xFF5D4037);
-            float by = r.bottom - 190 * u;
+            float by = r.bottom - 252 * u;
             final World.Flag ff = f;
             button(c, x, by, in, 52 * u, "Geologen schicken", 0xFF5D6B3A, true, () -> {
                 host.exec(new int[]{World.C_GEO, me, ff.id, 0});
                 say("Ein Geologe macht sich auf den Weg (braucht einen Hammer).");
+                select(-1);
+            });
+            by += 62 * u;
+            button(c, x, by, in, 52 * u, "Späher schicken", 0xFF00695C, true, () -> {
+                host.exec(new int[]{World.C_SCOUT, me, ff.id, 0});
+                say("Ein Späher zieht los und erkundet die Gegend rund um die Fahne.");
                 select(-1);
             });
             by += 62 * u;
@@ -850,7 +856,7 @@ public class Hud {
             "6. Wachstube/Wachturm an der Grenze: ein Soldat zieht ein und dein Land wächst.",
             "7. Viel benutzte Wege werden gepflastert (schneller) und bekommen bei noch mehr Verkehr einen zweiten Träger.",
             "8. Nahrung: Fischer (am Wasser), Jäger (im Wald), Bauernhof → Mühle → Bäckerei (+ Brunnen), Schweinezucht → Metzgerei.",
-            "9. Bergbau: Geologen an eine Fahne am Berg schicken, dann die passende Mine auf den Berg bauen. Minen brauchen Nahrung. Eisenschmelze: Erz + Kohle → Eisen. Werkzeugmacher: Eisen + Brett → Werkzeug.",
+            "9. Erkunden: An jeder Fahne kannst du einen Späher losschicken – er deckt den Nebel um die Fahne herum auf. Bergbau: Geologen an eine Fahne am Berg schicken, dann die passende Mine auf den Berg bauen. Minen brauchen Nahrung. Eisenschmelze: Erz + Kohle → Eisen. Werkzeugmacher: Eisen + Brett → Werkzeug.",
             "10. Jeder Beruf braucht sein Werkzeug (Axt, Säge, Spitzhacke …). Fehlt eins, steht es beim Gebäude. Menü → „Werkzeug“ bestimmt, was zuerst gemacht wird.",
             "11. Lagerhaus: zweites Lager, kurze Wege. Späherhütte: der Späher erkundet den Nebel. Bei Baustellen: „Zuerst bauen“.",
             "12. Zu zweit: Menü → „2 Spieler“. Die Tablets einmal in den Android-Einstellungen per Bluetooth koppeln. Einer tippt „Spiel erstellen“, der andere wählt dieses Tablet aus der Liste.",

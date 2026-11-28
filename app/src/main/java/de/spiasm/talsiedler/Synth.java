@@ -10,7 +10,7 @@ public final class Synth {
     public static final int S_CHOP = 1, S_CLINK = 2, S_DIG = 3, S_HAMMER = 4, S_SAW = 5, S_TREEFALL = 6, S_DONE = 7,
             S_LAND = 8, S_DROP = 9, S_PAVE = 10, S_CLICK = 11, S_PLACE = 12, S_ERROR = 13,
             S_BIRD1 = 14, S_BIRD2 = 15, S_BIRD3 = 16, S_WIND = 17, S_WATER = 18, S_MSG = 19,
-            S_SPLASH = 20, S_BOW = 21, S_SWISH = 22, S_OINK = 23, COUNT = 24;
+            S_SPLASH = 20, S_BOW = 21, S_SWISH = 22, S_OINK = 23, S_SOB = 24, COUNT = 25;
 
     private Synth() {
     }
@@ -333,6 +333,27 @@ public final class Synth {
                 }
                 lowpass(a, 0.25f);
                 for (int i = 0; i < a.length; i++) a[i] *= 2f;
+                break;
+            }
+            case S_SOB: { // Schluchzen: zwei Hickser, dann ein langes Huuuu
+                a = buf(1.25f);
+                float ph = 0;
+                float[][] parts = {{0f, 0.11f, 560, 500}, {0.16f, 0.11f, 590, 520}, {0.34f, 0.85f, 620, 300}};
+                for (float[] q : parts) {
+                    int at = (int) (q[0] * RATE), len = (int) (q[1] * RATE);
+                    for (int i = 0; i < len && at + i < a.length; i++) {
+                        float t = i / (float) RATE, fr = t / q[1];
+                        float f = q[2] + (q[3] - q[2]) * fr + 22 * (float) Math.sin(2 * Math.PI * 7 * t);
+                        ph += f / RATE;
+                        float v = (float) (Math.sin(2 * Math.PI * ph) + 0.55 * Math.sin(4 * Math.PI * ph) + 0.3 * Math.sin(6 * Math.PI * ph));
+                        float e = (float) Math.pow(Math.sin(Math.PI * Math.min(1, fr * (fr < 0.2f ? 1 : 1))), 0.6);
+                        a[at + i] += v * e * 0.35f;
+                    }
+                }
+                float[] br = noise(1.25f, r);
+                lowpass(br, 0.12f);
+                for (int i = 0; i < a.length; i++) a[i] += br[i] * 0.25f * Math.min(1, Math.abs(a[i]) * 3);
+                lowpass(a, 0.4f);
                 break;
             }
             default:

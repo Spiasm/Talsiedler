@@ -111,11 +111,12 @@ public class World implements Serializable {
 
     // Ereignisse für Töne
     public static final int E_CHOP = 1, E_CLINK = 2, E_DIG = 3, E_HAMMER = 4, E_SAW = 5, E_TREEFALL = 6, E_DONE = 7,
-            E_LAND = 8, E_DROP = 9, E_PAVE = 10, E_SPLASH = 20, E_BOW = 21, E_SWISH = 22, E_OINK = 23;
+            E_LAND = 8, E_DROP = 9, E_PAVE = 10, E_SPLASH = 20, E_BOW = 21, E_SWISH = 22, E_OINK = 23, E_SOB = 24;
     static final float BUILD_PER_MAT = 3f;
     static final float TREE_GROW = 35f;
     static final float FIELD_GROW = 30f;
     static final float SIGN_TIME = 1200f;
+    static final int GEO_PROBES = 16, SCOUT_TRIPS = 12;
 
     // ---------------- Klassen ----------------
 
@@ -218,6 +219,10 @@ public class World implements Serializable {
         float tempo, speedF;
         public boolean helper;
         int probes, found;
+        /** arbeitslos und traurig auf dem Heimweg */
+        public boolean sad;
+        /** Späher, der von einer Fahne aus die Gegend erkundet */
+        boolean roam;
         /** Fischer: Wasserfeld, Jäger: Tier, Bauer: 1 = ernten */
         int aux;
 
@@ -422,7 +427,7 @@ public class World implements Serializable {
 
     // ---------------- Befehle (für Bedienung und 2-Spieler) ----------------
 
-    public static final int C_BUILD = 1, C_FLAG = 2, C_ROAD = 3, C_REMOVE = 4, C_STOP = 5, C_GEO = 6, C_PRIO = 7, C_TOOLPRIO = 8;
+    public static final int C_BUILD = 1, C_FLAG = 2, C_ROAD = 3, C_REMOVE = 4, C_STOP = 5, C_GEO = 6, C_PRIO = 7, C_TOOLPRIO = 8, C_SCOUT = 9;
 
     /** Befehl ausführen: {Art, Spieler, a, b} */
     public boolean apply(int[] c) {
@@ -448,6 +453,8 @@ public class World implements Serializable {
             }
             case C_GEO:
                 return sendGeologist(c[2], pl);
+            case C_SCOUT:
+                return sendScout(c[2], pl);
             case C_PRIO: {
                 Building b = buildings.get(c[2]);
                 if (b == null || b.player != pl || b.done) return false;
@@ -574,7 +581,7 @@ public class World implements Serializable {
         genResources(rng);
         genFish();
         for (int pl = 0; pl < centers.length; pl++) startArea(centers[pl], pl);
-        for (int i = 0; i < 26; i++) spawnAnimal(centers);
+        for (int i = 0; i < 40; i++) spawnAnimal(centers);
         toolsGiven = true;
         recomputeTerritory();
     }
@@ -1114,7 +1121,11 @@ public class World implements Serializable {
         }
         Building b = buildingAt(nb(f.node, 4));
         if (b != null && b.flag == f.id) removeBuilding(b);
-        for (Ware w : f.wares) loseWare(w);
+        Building home = hqB(f.player);
+        for (Ware w : f.wares) {
+            loseWare(w);
+            if (home != null) home.stock[w.type]++;
+        }
         f.wares.clear();
         flags.remove(f.id);
         obj[f.node] = O_NONE;
@@ -1124,6 +1135,7 @@ public class World implements Serializable {
     public void removeBuilding(Building b) {
         if (isHq(b)) return;
         buildings.remove(b.id);
+        returnWares(b);
         obj[b.node] = O_NONE;
         for (int d = 0; d < 6; d++) {
             int m = nb(b.node, d);
@@ -1139,7 +1151,72 @@ public class World implements Serializable {
     private void dismiss(Settler s) {
         if (s.target >= 0 && s.job != J_CARRIER) reserved[s.target] = false;
         if (s.job == J_HUNTER) releaseAnimal(s.aux);
-        backHome(s);
+        s.target = -1;
+        walkHome(s, s.job != J_SOLDIER);
+    }
+
+    /** Siedler läuft quer übers Land zurück ins Hauptquartier (arbeitslos: weinend). */
+    void walkHome(Settler s, boolean sad) {
+        Building h = hqB(s.player);
+        if (s.walking()) s.node = s.next;
+        s.next = -1;
+        s.prog = 0;
+        s.path = null;
+        s.visible = true;
+        s.home = -1;
+        s.carry = null;
+        s.carryType = -1;
+        s.roam = false;
+        s.pause = 0;
+        s.timer = 0;
+        s.state = S_RETURN;
+        s.sad = sad;
+        int[] p = h == null ? null : walkPath(s.node, h.node, 70);
+        if (p == null || p.length == 0) {
+            backHome(s);
+            return;
+        }
+        setPath(s, p);
+        if (sad) ev(E_SOB, s.node);
+    }
+
+    /** Eingelagerte Waren eines abgerissenen Gebäudes zurück ins Lager bringen. */
+    private void returnWares(Building b) {
+        b.grow();
+        int[] back = new int[NWARES];
+        int total = 0;
+        if (b.done) {
+            for (int t = 0; t < NWARES; t++) back[t] = Math.max(0, b.stock[t]);
+        } else {
+            int u = b.used;
+            for (int t = 0; t < NWARES; t++) {
+                int k = Math.min(u, b.got[t]);
+                back[t] = Math.max(0, b.got[t] - k);
+                u -= k;
+            }
+        }
+        for (int v : back) total += v;
+        if (total == 0) return;
+        Flag f = flags.get(b.flag);
+        int st = f == null ? -1 : nearestStorage(f, -1);
+        Building direct = st >= 0 ? buildings.get(st) : hqB(b.player);
+        Building hq = hqB(b.player);
+        for (int t = 0; t < NWARES; t++) {
+            for (int k = 0; k < back[t]; k++) {
+                if (st >= 0 && f.wares.size() < FLAG_CAP) {
+                    Ware w = new Ware();
+                    w.type = t;
+                    w.dest = isTool(t) ? hq.id : st;
+                    w.flag = f.id;
+                    f.wares.add(w);
+                    route(w, f);
+                } else {
+                    Building d = isTool(t) || direct == null ? hq : direct;
+                    if (d != null) d.stock[t]++;
+                }
+            }
+        }
+        msg(B_NAMES[b.type] + " abgerissen: " + total + (total == 1 ? " Ware geht" : " Waren gehen") + " zurück ins Lager", b.node, b.player);
     }
 
     void releaseAnimal(int id) {
@@ -1606,6 +1683,100 @@ public class World implements Serializable {
         return true;
     }
 
+    /** Späher zu einer Fahne schicken: er erkundet von dort aus die Gegend. */
+    public boolean sendScout(int flagId, int pl) {
+        Flag f = flags.get(flagId);
+        if (f == null || f.player != pl) return false;
+        Building h = hqB(pl);
+        if (!canStaff(pl, J_SCOUT, null)) {
+            msg("Kein Späher: es fehlen freie Siedler", f.node, pl);
+            return false;
+        }
+        int[] p = netPath(h.flag, f.id);
+        if (p == null) {
+            msg("Der Späher findet keinen Weg zu dieser Fahne", f.node, pl);
+            return false;
+        }
+        takeWorker(pl, J_SCOUT);
+        Settler s = spawn(J_SCOUT, p, pl);
+        s.state = S_TO_SITE;
+        s.aux = f.id;
+        s.probes = 0;
+        s.roam = true;
+        return true;
+    }
+
+    private void roamScout(Settler s, float dt) {
+        Flag f = flags.get(s.aux);
+        if (f == null) {
+            walkHome(s, false);
+            return;
+        }
+        switch (s.state) {
+            case S_TO_SITE:
+            case S_WORK: {
+                if (s.state == S_WORK) {
+                    s.timer -= dt;
+                    s.workPhase += dt;
+                    if (s.timer > 0) return;
+                }
+                if (s.probes >= SCOUT_TRIPS) {
+                    int[] back = walkPath(s.node, f.node, 24);
+                    if (back == null) {
+                        walkHome(s, false);
+                        return;
+                    }
+                    setPath(s, back);
+                    s.state = S_OUT_BACK;
+                    return;
+                }
+                boolean[] ex = exploredOf(s.player);
+                int best = -1, bestScore = -1;
+                for (int k = 0; k < 30; k++) {
+                    int m = walkDir(f.node, rng.nextInt(6), 5 + rng.nextInt(10));
+                    if (m < 0 || m == s.node || !passableTerrain(m) || obj[m] == O_BUILDING || obj[m] == O_BLOCK) continue;
+                    int sc = 0;
+                    for (int q : around(m, 3)) if (!ex[q]) sc++;
+                    if (sc > bestScore) {
+                        bestScore = sc;
+                        best = m;
+                    }
+                }
+                s.probes++;
+                int[] p = best < 0 ? null : walkPath(s.node, best, 26);
+                if (p == null || p.length == 0) {
+                    s.state = S_WORK;
+                    s.timer = 0.5f;
+                    return;
+                }
+                s.target = best;
+                setPath(s, p);
+                s.state = S_OUT_GO;
+                return;
+            }
+            case S_OUT_GO:
+                reveal(s.node, 4, s.player);
+                s.state = S_WORK;
+                s.timer = 2.5f;
+                s.workPhase = 0;
+                return;
+            case S_OUT_BACK: {
+                Building h = hqB(s.player);
+                int[] p = netPath(f.id, h.flag);
+                if (p == null) {
+                    walkHome(s, false);
+                    return;
+                }
+                s.roam = false;
+                s.state = S_RETURN;
+                setPath(s, concat(p, h.node));
+                return;
+            }
+            default:
+                walkHome(s, false);
+        }
+    }
+
     private void requests() {
         for (Building b : buildings.values()) {
             if (isHq(b)) continue;
@@ -1838,6 +2009,7 @@ public class World implements Serializable {
                     s.pi++;
                     s.prog = 0;
                     if (s.job == J_SCOUT && s.visible) reveal(s.node, 2, s.player);
+                    if (s.sad && s.pi % 3 == 1) ev(E_SOB, s.node);
                     if (s.pi < s.path.length) {
                         s.next = s.path[s.pi];
                         s.stepTime = stepTime(s, s.node, s.next);
@@ -1852,9 +2024,10 @@ public class World implements Serializable {
     private void animalsTick(float dt) {
         if (animals == null) return;
         animalT += dt;
-        if (animalT >= 45f) {
+        if (animalT >= 12f) {
             animalT = 0;
-            if (animals.size() < 22) spawnAnimal(null);
+            if (animals.size() < 45) spawnAnimal(null);
+            if (animals.size() < 25) spawnAnimal(null);
         }
         for (Animal a : animals) {
             if (a.next >= 0) {
@@ -1896,6 +2069,10 @@ public class World implements Serializable {
         }
         if (s.job == J_GEOLOGIST) {
             geologist(s, dt);
+            return;
+        }
+        if (s.job == J_SCOUT && s.roam) {
+            roamScout(s, dt);
             return;
         }
         Building b = buildings.get(s.home);
@@ -2311,12 +2488,12 @@ public class World implements Serializable {
         switch (s.state) {
             case S_TO_SITE:
             case S_OUT_BACK: {
-                if (f == null || s.probes >= 8) {
+                if (f == null || s.probes >= GEO_PROBES) {
                     geoHome(s, f);
                     return;
                 }
                 ArrayList<Integer> mnt = new ArrayList<>(), any = new ArrayList<>();
-                for (int m : around(f.node, 6)) {
+                for (int m : around(f.node, 7)) {
                     if (!passableTerrain(m) || obj[m] == O_BUILDING || obj[m] == O_BLOCK || m == s.node) continue;
                     if (sign[m] != 0 && time - signT[m] < SIGN_TIME) continue;
                     if (terrain[m] == T_MOUNTAIN) mnt.add(m);
@@ -2324,7 +2501,7 @@ public class World implements Serializable {
                 }
                 ArrayList<Integer> pick = !mnt.isEmpty() ? mnt : any;
                 if (pick.isEmpty()) {
-                    s.probes = 8;
+                    s.probes = GEO_PROBES;
                     geoHome(s, f);
                     return;
                 }
@@ -2370,7 +2547,7 @@ public class World implements Serializable {
     }
 
     private void geoHome(Settler s, Flag f) {
-        if (s.probes >= 8 && s.found == 0 && f != null) msg("Der Geologe hat hier nichts gefunden", f.node, s.player);
+        if (s.probes >= GEO_PROBES && s.found == 0 && f != null) msg("Der Geologe hat hier nichts gefunden", f.node, s.player);
         Building h = hqB(s.player);
         int[] p = f == null ? null : netPath(f.id, h.flag);
         if (p == null) {

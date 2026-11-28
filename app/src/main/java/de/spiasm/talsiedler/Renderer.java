@@ -277,6 +277,11 @@ public class Renderer {
                 if (w.sign != null && w.sign[n] != 0 && (w.obj[n] == World.O_NONE || w.obj[n] == World.O_FIELD)) geoSign(c, px, py, w.sign[n]);
             }
             for (float[] fl : w.falls) if ((int) fl[0] / World.W == y) falling(c, w, fl);
+            if (w.ruins != null)
+                for (float[] ru : w.ruins) {
+                    int rn = (int) ru[0];
+                    if (rn / World.W == y && ex[rn] && w.obj[rn] != World.O_BUILDING) ruin(c, w, ru, t);
+                }
             if (w.animals != null)
                 for (World.Animal a : w.animals) {
                     int ar = Math.max(a.node / World.W, a.next >= 0 ? a.next / World.W : 0);
@@ -748,6 +753,55 @@ public class Renderer {
                 c.drawRect(x - 2.2f * s, y - 1.2f * s, x + 1.8f * s, y - 0.5f * s, p);
                 return;
         }
+        if (type == World.WARE_SWORD) {
+            c.save();
+            c.translate(x, y);
+            c.scale(s, s);
+            c.rotate(-40);
+            p.setColor(0xFFDDE3E8);
+            path.reset();
+            path.moveTo(-0.7f, -1.5f);
+            path.lineTo(-0.6f, -7.2f);
+            path.lineTo(0, -8.4f);
+            path.lineTo(0.6f, -7.2f);
+            path.lineTo(0.7f, -1.5f);
+            path.close();
+            c.drawPath(path, p);
+            p.setColor(0xFF9AA3AA);
+            c.drawRect(-0.15f, -7.2f, 0.15f, -1.5f, p);
+            p.setColor(0xFFC9A227);
+            c.drawRect(-2.6f, -1.6f, 2.6f, -0.7f, p);
+            p.setColor(0xFF6D4C41);
+            c.drawRect(-0.55f, -0.7f, 0.55f, 2.2f, p);
+            p.setColor(0xFFC9A227);
+            c.drawCircle(0, 2.6f, 0.8f, p);
+            c.restore();
+            return;
+        }
+        if (type == World.WARE_SHIELD) {
+            c.save();
+            c.translate(x, y);
+            c.scale(s, s);
+            path.reset();
+            path.moveTo(-3.6f, -3.6f);
+            path.lineTo(3.6f, -3.6f);
+            path.lineTo(3.6f, -0.5f);
+            path.quadTo(3.4f, 3f, 0, 4.4f);
+            path.quadTo(-3.4f, 3f, -3.6f, -0.5f);
+            path.close();
+            p.setColor(0xFF6B7178);
+            c.drawPath(path, p);
+            c.scale(0.8f, 0.8f);
+            p.setColor(0xFF8D5A2B);
+            c.drawPath(path, p);
+            p.setColor(0xFF6B7178);
+            c.drawRect(-0.6f, -3.6f, 0.6f, 4f, p);
+            c.drawRect(-3.6f, -1.2f, 3.6f, 0f, p);
+            p.setColor(0xFFC9A227);
+            c.drawCircle(0, -0.6f, 1f, p);
+            c.restore();
+            return;
+        }
         if (World.isTool(type)) {
             // Werkzeug auf einem kleinen Brett
             p.setColor(0xFFCFB88E);
@@ -885,6 +939,153 @@ public class Renderer {
         c.drawRect(x - 1.2f, y - h * 0.7f, x + 1.2f, y - h * 0.55f, p);
         p.setColor(0xFF4A2E1A);
         c.drawRect(x - w * 0.15f, y - h * 0.3f, x + w * 0.15f, y, p);
+    }
+
+    // ---------- Soldaten ----------
+
+    public static final int[] RANK_COL = {0xFF8E8E8E, 0xFFB0703A, 0xFFD5DAE0, 0xFF5B8DEF, 0xFFFFC107};
+
+    private void soldier(Canvas c, World w, World.Settler s, float x, float y, int face, float legs, boolean walk) {
+        int shirt = World.P_COLORS[s.player];
+        int helm = RANK_COL[Math.max(0, Math.min(4, s.rank))];
+        float wt = w.time;
+        if (s.state == World.A_DEAD) {
+            // gefallen: liegt am Boden
+            float f = Math.min(1f, (3f - s.timer) / 0.6f);
+            c.save();
+            c.translate(x, y);
+            c.rotate(-face * 88 * f);
+            beginFigure(c, 0, 0, face, shade(shirt, 0.8f), helm, 0, 0, 0, 20, false);
+            arm(c, 40, shade(shirt, 0.8f));
+            endFigure(c);
+            c.restore();
+            if (s.timer < 1.2f) {
+                // kleines Grabkreuz erscheint
+                p.setColor(0xFF6D4C41);
+                c.drawRect(x + face * 5 - 0.4f, y - 5, x + face * 5 + 0.4f, y, p);
+                c.drawRect(x + face * 5 - 1.6f, y - 3.8f, x + face * 5 + 1.6f, y - 3.1f, p);
+            }
+            return;
+        }
+        boolean fighting = s.state == World.A_FIGHT && !walk;
+        boolean waiting = (s.state == World.A_WAIT || s.state == World.A_DEFEND) && !walk;
+        if (fighting) {
+            boolean attacker = s.atk != 0;
+            face = attacker ? -1 : 1;
+            x += attacker ? 7f : -7f;
+            y += attacker ? 2f : -1f;
+        } else if (waiting && s.atk != 0) {
+            int k = s.id % 7;
+            x += (k % 4 - 1.5f) * 5f + 6;
+            y += (k / 4) * 4f + 3;
+            face = -1;
+        }
+        float sw = fighting ? Math.max(0, 1 - (wt - s.swingT) / 0.45f) : 0;
+        float lunge = fighting ? sw * 1.6f * face : 0;
+        float lean = fighting ? 8 * sw : 0;
+        beginFigure(c, x + lunge, y, face, shirt, helm, walk ? legs : 0, fighting ? 0.3f : 0, lean, walk ? -28 * legs : 10, false);
+        // Schild vorn am Körper
+        p.setColor(0xFF6B7178);
+        rf.set(0.6f, -1.6f, 4.0f, 3.6f);
+        c.drawOval(rf, p);
+        p.setColor(shade(shirt, 0.9f));
+        rf.set(1.0f, -1.2f, 3.6f, 3.2f);
+        c.drawOval(rf, p);
+        p.setColor(0xFFC9A227);
+        c.drawCircle(2.3f, 1f, 0.55f, p);
+        // Schwertarm
+        float a = fighting ? 170 - 120 * (1 - sw) * (1 - sw) : walk ? 25 : 40;
+        if (fighting && sw <= 0) a = 120 + 15 * (float) Math.sin(wt * 6 + s.id);
+        float[] h = arm(c, a, shirt);
+        float r = (float) Math.toRadians(a + (fighting ? 10 : 150));
+        float dx = (float) Math.sin(r), dy = (float) Math.cos(r);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeCap(Paint.Cap.ROUND);
+        p.setStrokeWidth(0.75f);
+        p.setColor(0xFFE3E8EC);
+        c.drawLine(h[0], h[1], h[0] + dx * 6.5f, h[1] + dy * 6.5f, p);
+        p.setStrokeWidth(0.9f);
+        p.setColor(0xFFC9A227);
+        c.drawLine(h[0] - dy * 1.2f, h[1] + dx * 1.2f, h[0] + dy * 1.2f, h[1] - dx * 1.2f, p);
+        p.setStyle(Paint.Style.FILL);
+        endFigure(c);
+        // Rang-Streifen auf dem Helm
+        if (s.rank > 0) {
+            p.setColor(0xFFFFFFFF);
+            for (int k = 0; k < s.rank; k++) c.drawCircle(x + lunge - 2f + k * 1.3f, y - 17.6f, 0.45f, p);
+        }
+        if (fighting || waiting) {
+            // Lebensbalken
+            float mx = World.maxHp(s.rank), f = Math.max(0, s.hp) / mx;
+            p.setColor(0xB0000000);
+            c.drawRect(x - 4.2f, y - 21f, x + 4.2f, y - 19.6f, p);
+            p.setColor(f > 0.5f ? 0xFF43A047 : f > 0.25f ? 0xFFFFB300 : 0xFFE53935);
+            c.drawRect(x - 4f, y - 20.8f, x - 4f + 8f * f, y - 19.8f, p);
+        }
+        if (wt - s.hitT < 0.3f) {
+            float g = 1 - (wt - s.hitT) / 0.3f;
+            p.setColor(((int) (255 * g) << 24) | 0xFFF59D);
+            for (int k = 0; k < 6; k++) {
+                double an = k * Math.PI / 3 + s.id;
+                c.drawCircle(x + (float) Math.cos(an) * 3.5f * (1.2f - g), y - 9 + (float) Math.sin(an) * 3.5f * (1.2f - g), 0.7f, p);
+            }
+        }
+    }
+
+    /** Flammen (Größe s) */
+    private void fire(Canvas c, float x, float y, float s, float t, int seed) {
+        for (int k = 0; k < 5; k++) {
+            float ph = t * 7 + k * 1.7f + seed;
+            float fx = x + (k - 2) * 2.6f * s + (float) Math.sin(ph) * 0.8f * s;
+            float hgt = (5 + 3 * (float) Math.sin(ph * 1.3f)) * s;
+            path.reset();
+            path.moveTo(fx - 1.8f * s, y);
+            path.quadTo(fx - 1.6f * s, y - hgt * 0.6f, fx + (float) Math.sin(ph * 2) * s, y - hgt);
+            path.quadTo(fx + 1.6f * s, y - hgt * 0.6f, fx + 1.8f * s, y);
+            path.close();
+            p.setColor(0xD0FF6D00);
+            c.drawPath(path, p);
+            c.save();
+            c.translate(fx, y);
+            c.scale(0.55f, 0.6f);
+            c.translate(-fx, -y);
+            p.setColor(0xE0FFD54F);
+            c.drawPath(path, p);
+            c.restore();
+        }
+    }
+
+    private void smokePuffs(Canvas c, float x, float y, float t, float s, int dark) {
+        for (int k = 0; k < 5; k++) {
+            float f = ((t * 0.3f + k / 5f) % 1f);
+            int a = (int) (0x90 * (1 - f));
+            p.setColor((a << 24) | (dark & 0xFFFFFF));
+            c.drawCircle(x + f * 8 * s + (float) Math.sin(t + k) * 2, y - f * 26 * s, (2 + f * 5) * s, p);
+        }
+    }
+
+    /** abgebranntes Gebäude: erst Flammen, dann Rauch, dann Schutt */
+    private void ruin(Canvas c, World w, float[] r, float t) {
+        int n = (int) r[0];
+        float age = w.time - r[1], s = r[2] >= 2 ? 1.4f : 1f;
+        float x = nx(n), y = ny(w, n);
+        if (age > 230) return;
+        float fade = age > 200 ? (230 - age) / 30f : 1f;
+        int a = (int) (255 * fade);
+        // Schutt
+        p.setColor((a << 24) | 0x3E3A36);
+        rf.set(x - 11 * s, y - 3 * s, x + 11 * s, y + 3 * s);
+        c.drawOval(rf, p);
+        for (int k = 0; k < 9; k++) {
+            float bx = x + ((k * 37 + n) % 17 - 8) * s, by = y - ((k * 13 + n) % 5) * 0.8f * s;
+            p.setColor((a << 24) | (k % 3 == 0 ? 0x1E1A16 : k % 3 == 1 ? 0x5A4A3A : 0x7A6E62));
+            c.drawRect(bx - 1.8f, by - 1.2f, bx + 1.8f, by + 0.6f, p);
+        }
+        p.setColor((a << 24) | 0x2A2420);
+        c.drawRect(x - 7 * s, y - 9 * s, x - 5.6f * s, y - 1, p);
+        c.drawRect(x + 4 * s, y - 6 * s, x + 5.4f * s, y - 1, p);
+        if (age < 30) fire(c, x, y - 1, s * (age < 20 ? 1.2f : (30 - age) / 8f), t, n);
+        if (age < 90) smokePuffs(c, x, y - 8, t, s, 0x555555);
     }
 
     private void banner(Canvas c, float x, float y, float t) {
@@ -1042,6 +1243,12 @@ public class Renderer {
             boolean sawing = b.type == World.B_SAW && wk != null && wk.state == World.S_SAW;
             sawAngle = sawing ? t * 14f : 0;
             buildingSprite(c, b.type, x, y, t);
+            if (World.isHq(b) && (w.fallen & (1 << b.player)) != 0) {
+                fire(c, x - 20, y - 30, 1.3f, t, 1);
+                fire(c, x + 4, y - 32, 1.6f, t, 2);
+                fire(c, x + 25, y - 26, 1.2f, t, 3);
+                smokePuffs(c, x, y - 40, t, 1.6f, 0x444444);
+            }
             millAngle = 0.4f;
             sawAngle = 0;
             boolean working = wk != null && !b.stopped && !b.problem;
@@ -1174,7 +1381,7 @@ public class Renderer {
 
     private static final int[] SHIRT = {0xFFD84315, 0xFFF9A825, 0xFF6D4C41, 0xFF2E7D32, 0xFF757575, 0xFFAD7A3D, 0xFF1E5BC6,
             0xFF3C7AA8, 0xFF4E6B2E, 0xFF5C8DB5, 0xFFC9A227, 0xFFE0E0E0, 0xFFF0F0F0, 0xFFC27BA0, 0xFF9E2B2B, 0xFF4E4E4E, 0xFF795548,
-            0xFF37474F, 0xFF00897B, 0xFF8E6A3A};
+            0xFF37474F, 0xFF00897B, 0xFF8E6A3A, 0xFF5D4037};
     private static final float[][] BUILD_SPOTS = {{-13, 1}, {13, 0}, {-2, 7}, {9, 5}};
 
     private static float frac(float v) {
@@ -1391,6 +1598,11 @@ public class Renderer {
         int hat = s.job == World.J_SOLDIER ? 0xFF9E9E9E : s.job == World.J_BUILDER ? 0xFFF9A825 : 0xFF5D4037;
         float tp = s.tempo();
         int car = s.carried();
+
+        if (s.job == World.J_SOLDIER) {
+            soldier(c, w, s, x, y, face, legs, walk);
+            return;
+        }
 
         // ---- arbeitslos und traurig auf dem Heimweg ----
         if (s.sad) {

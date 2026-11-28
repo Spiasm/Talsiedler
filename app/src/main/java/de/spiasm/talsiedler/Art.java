@@ -45,7 +45,8 @@ final class Art {
                 {-21, -34, 21, 9}, {-29, -44, 29, 10}, {-23, -28, 26.5f, 9.5f}, {-25, -28, 26.5f, 9}, {-17, -27, 17, 8},
                 {-33, -35.5f, 36, 10}, {-23, -36, 21, 8.5f}, {-31, -35.5f, 35, 10}, {-31, -31, 36, 10}, {-30, -36.5f, 34, 10},
                 {-29, -28, 29, 10.5f}, {-29, -28, 29, 10.5f}, {-29, -28, 29, 10.5f}, {-29, -28, 29, 10.5f},
-                {-31, -57.5f, 31, 10}, {-31, -36.5f, 32, 10}, {-33, -41.5f, 37, 10}, {-19, -47, 19, 9}};
+                {-31, -57.5f, 31, 10}, {-31, -36.5f, 32, 10}, {-33, -41.5f, 37, 10}, {-19, -47, 19, 9},
+                {-31, -37, 33, 10}, {-38, -50, 40, 11}};
         for (int i = 0; i < World.NB; i++) BOX[i] = bx[i];
         BANNERS[World.B_HQ] = new float[]{-21f, -42.5f, 28.6f, -47f, 1.5f, -34.5f};
         BANNERS[World.B_GUARD] = new float[]{5.5f, -26.5f};
@@ -65,6 +66,8 @@ final class Art {
         SMOKE[World.B_SMELTER] = new float[]{12.5f, -55f};
         SMOKE[World.B_TOOLS] = new float[]{13f, -33f};
         SMOKE[World.B_STORE] = null;
+        SMOKE[World.B_ARMORY] = new float[]{12f, -33f};
+        BANNERS[World.B_FORT] = new float[]{-23.5f, -31.8f, 31.5f, -31.8f, 2f, -34.5f};
     }
 
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -1104,6 +1107,8 @@ final class Art {
             case World.B_TOOLS: tools(); break;
             case World.B_STORE: store(); break;
             case World.B_SCOUT: scout(); break;
+            case World.B_ARMORY: armory(); break;
+            case World.B_FORT: fort(); break;
         }
     }
 
@@ -1995,5 +2000,147 @@ final class Art {
         ln(pl + 1.5f, pt - 4, pl - 1.5f, pt - 5.8f, 0.6f, 0xFFB09040);
         bush(12, 4, 0.9f, false);
         sack(9, 7, 0.7f, 0xFFA89870);
+    }
+
+    private void shieldProp(float x, float y, float sc, int col) {
+        pa.reset();
+        pa.moveTo(x - 2.2f * sc, y - 3 * sc);
+        pa.lineTo(x + 2.2f * sc, y - 3 * sc);
+        pa.lineTo(x + 2.2f * sc, y - 0.6f * sc);
+        pa.quadTo(x + 2f * sc, y + 1.8f * sc, x, y + 2.8f * sc);
+        pa.quadTo(x - 2f * sc, y + 1.8f * sc, x - 2.2f * sc, y - 0.6f * sc);
+        pa.close();
+        p.setColor(0xFF5E646A);
+        c.drawPath(pa, p);
+        c.save();
+        c.translate(x, y);
+        c.scale(0.8f, 0.8f);
+        c.translate(-x, -y);
+        p.setColor(col);
+        c.drawPath(pa, p);
+        c.restore();
+        ln(x, y - 2.5f * sc, x, y + 2.2f * sc, 0.3f * sc, 0xFFE8DCC0);
+        ln(x - 1.7f * sc, y - 0.8f * sc, x + 1.7f * sc, y - 0.8f * sc, 0.3f * sc, 0xFFE8DCC0);
+        circ(x, y - 0.8f * sc, 0.45f * sc, 0xFFC9A227);
+    }
+
+    private void swordProp(float x1, float y1, float x2, float y2) {
+        ln(x1, y1, x2, y2, 0.55f, 0xFFDDE3E8);
+        ln(x1, y1, x1 + (x2 - x1) * 0.9f, y1 + (y2 - y1) * 0.9f, 0.18f, 0xFF9AA3AA);
+        float dx = x2 - x1, dy = y2 - y1, l = (float) Math.hypot(dx, dy);
+        float nx = -dy / l, ny = dx / l;
+        ln(x1 - nx * 1.3f, y1 - ny * 1.3f, x1 + nx * 1.3f, y1 + ny * 1.3f, 0.5f, 0xFFC9A227);
+        ln(x1, y1, x1 - dx / l * 1.6f, y1 - dy / l * 1.6f, 0.5f, 0xFF6D4C41);
+        circ(x1 - dx / l * 1.9f, y1 - dy / l * 1.9f, 0.4f, 0xFFC9A227);
+    }
+
+    private void armory() {
+        ground(0, 1, 28, 7, 0xFF7E7466);
+        // Waffenständer links
+        rect(-27, -10, -26.4f, 2, 0xFF5A3C26);
+        rect(-14.6f, -10, -14, 2, 0xFF5A3C26);
+        rect(-27.2f, -10.6f, -13.8f, -9.8f, 0xFF6E4C30);
+        rect(-27.2f, -1.2f, -13.8f, -0.5f, 0xFF6E4C30);
+        for (int k = 0; k < 4; k++) swordProp(-25 + k * 3, -9.6f, -25.4f + k * 3, -1.4f);
+        int[] cols = {0xFF8E2A2A, 0xFF1E5BC6, 0xFF2E7D32};
+        for (int k = 0; k < 3; k++) shieldProp(-24 + k * 4.4f, 3.5f - (k % 2) * 0.6f, 1.05f, cols[k]);
+        house(3, 0, 24, 14, 11, 12, STONE, 0xFF8E867C, STONE, SLATE, 0xFF3E4450);
+        // offene Esse mit Glut
+        pa.reset();
+        pa.moveTo(-6.5f, -0.8f);
+        pa.lineTo(-6.5f, -6);
+        pa.quadTo(-6.5f, -9, -3.5f, -9);
+        pa.quadTo(-0.5f, -9, -0.5f, -6);
+        pa.lineTo(-0.5f, -0.8f);
+        pa.close();
+        p.setColor(0xFF2A1410);
+        c.drawPath(pa, p);
+        rect(-6, -3, -1, -0.8f, 0xFFE0602A);
+        circ(-3.5f, -3.2f, 1.6f, 0x80FFB040);
+        rect(-7.2f, -1, 0.2f, 0, 0xFF6E6860);
+        window(9, -8.5f, 2.6f, 2.6f, 0xFF4A3020, false);
+        archWindow(4, -9, 2.4f, 3.4f);
+        door(9.5f, 0, 3.4f, 7.5f, true, 0xFF4A3020);
+        gableWindow(true);
+        sideBegin(15, 0);
+        window(5.5f, -8, 2.4f, 2.4f, 0xFF4A3020, false);
+        sideEnd();
+        chimney(12, -26.5f, 2.6f, 7, BRICK);
+        // Schild mit gekreuzten Schwertern
+        ln(12.5f, -11.5f, 17.5f, -11.5f, 0.4f, IRON);
+        ln(12.7f, -9.9f, 14.3f, -11.5f, 0.25f, IRON);
+        shieldProp(16, -7.6f, 0.9f, 0xFFC62828);
+        swordProp(14, -10.5f, 18.4f, -5.5f);
+        swordProp(18, -10.5f, 13.6f, -5.5f);
+        anvil(17, 5);
+        barrel(22.5f, 6, 0.85f);
+        oval(20.6f, 2.2f, 24.4f, 3.4f, 0xFF2D5D8A);
+        heap(-8, 7, 3, 1.6f, 0xFF2A2A2E);
+        for (int i = 0; i < 2; i++) box(25 + i * 2.2f, 6.5f, 27 + i * 2.2f, 7.3f, 0.8f, 0xFF7A8088);
+    }
+
+    private void fort() {
+        ground(1, 2, 38, 9, 0xFF8E8068);
+        // Burgmauer hinten
+        tex(-24, -18, 26, -6, STONE, 0xFFA59B88);
+        for (float xx = -24; xx < 26; xx += 2.4f) box(xx, -20.4f, xx + 1.3f, -18, 0.6f, 0xFFADA390);
+        // Bergfried
+        house(2, -2, 22, 20, 12, 12, STONE, 0xFFB8AE9A, STONE, SLATE, 0xFF4A5262);
+        archWindow(-3.5f, -14, 2.4f, 4);
+        archWindow(7.5f, -14, 2.4f, 4);
+        slit(2, -26, 3);
+        sideBegin(13, -2);
+        slit(4, -14, 3.2f);
+        slit(9, -14, 3.2f);
+        sideEnd();
+        // Türme
+        tower(-26.5f, 2, 12, 30, 6, 0xFFB0A692, false, 0);
+        slit(-26.5f, -18, 3.2f);
+        slit(-26.5f, -8, 3.2f);
+        tower(28.5f, 2, 12, 30, 6, 0xFFA89E8A, false, 0);
+        slit(28.5f, -18, 3.2f);
+        slit(28.5f, -8, 3.2f);
+        // vordere Mauer mit Tor
+        tex(-20.5f, -10, 22.5f, 3, STONE, 0xFFB5AB98);
+        for (float xx = -20.5f; xx < 22.5f; xx += 2.6f) {
+            box(xx, -12.6f, xx + 1.4f, -10, 0.7f, jit(0xFFBDB3A0, 0.05f));
+            ln(xx, -12.6f, xx + 1.4f, -12.6f, 0.2f, 0xFFD8CFBE);
+        }
+        rect(-20.5f, -10.4f, 22.5f, -9.6f, 0xFF8E8676);
+        // Torbogen mit Fallgitter
+        pa.reset();
+        pa.moveTo(-3.5f, 3);
+        pa.lineTo(-3.5f, -3);
+        pa.quadTo(-3.5f, -7.5f, 1, -7.5f);
+        pa.quadTo(5.5f, -7.5f, 5.5f, -3);
+        pa.lineTo(5.5f, 3);
+        pa.close();
+        p.setColor(0xFF1E1A16);
+        c.drawPath(pa, p);
+        c.save();
+        c.clipPath(pa);
+        for (float xx = -3; xx < 5.5f; xx += 1.3f) ln(xx, -8, xx, -1.5f, 0.3f, IRON);
+        for (float yy = -7; yy < -1.5f; yy += 1.3f) ln(-3.5f, yy, 5.5f, yy, 0.3f, IRON);
+        c.restore();
+        for (int k = 0; k < 7; k++) {
+            double a = Math.PI * (k / 6.0);
+            float px1 = 1 - (float) Math.cos(a) * 5.4f, py1 = -3 - (float) Math.sin(a) * 5.4f;
+            circ(px1, py1, 0.9f, 0xFFCFC6B4);
+        }
+        // Wappenschild über dem Tor
+        shieldProp(1, -12.5f, 1.2f, 0xFFD8C060);
+        torch(-6, 1);
+        torch(8, 1);
+        // Vorplatz
+        barrel(-16, 7, 0.9f);
+        crate(-12, 8, 0.8f);
+        for (int k = 0; k < 3; k++) {
+            ln(13 + k * 1.3f, 8, 14 + k * 0.9f, -2, 0.3f, 0xFF8D6440);
+            tri(13.7f + k * 0.9f, -2, 14.3f + k * 0.9f, -2, 14 + k * 0.9f, -3.8f, 0xFFB0B4B8);
+        }
+        rect(12, 5, 17, 5.6f, 0xFF6E4C30);
+        shieldProp(20, 6.5f, 1, 0xFF8E2A2A);
+        bush(-34, 6, 1, false);
+        bush(36, 6, 0.9f, true);
     }
 }

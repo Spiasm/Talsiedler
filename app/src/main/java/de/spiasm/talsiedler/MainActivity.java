@@ -56,7 +56,7 @@ public class MainActivity extends Activity implements Hud.Host, BtLink.Listener 
         sound.setVolumes(view.hud.fxVol, view.hud.ambVol);
         World w = read(file());
         if (w == null) w = new World(System.currentTimeMillis());
-        w.mode = 0;
+        if (w.ai == 0) w.mode = 0;
         session.w = w;
         view.setWorld(w);
         setContentView(view);
@@ -132,13 +132,19 @@ public class MainActivity extends Activity implements Hud.Host, BtLink.Listener 
         World w = view.world();
         if (w == null) return;
         if (session.role == Session.GUEST) return;
-        if (w.players > 1) return;
+        if (session.role != Session.SOLO || w.players > 1 && w.ai == 0) return;
         write(w, file());
     }
 
     @Override
-    public void newGame() {
-        World w = new World(System.currentTimeMillis());
+    public void newGame(int ai) {
+        World w;
+        if (ai > 0) {
+            w = new World(System.currentTimeMillis(), 2, 4);
+            w.ai = ai;
+        } else w = new World(System.currentTimeMillis());
+        view.hud.me = 0;
+        view.ren.me = 0;
         session.w = w;
         view.setWorld(w);
         save();
@@ -158,7 +164,7 @@ public class MainActivity extends Activity implements Hud.Host, BtLink.Listener 
         String info = new SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.GERMANY).format(new Date())
                 + "  ·  Spielzeit " + (mins / 60) + ":" + String.format(Locale.GERMANY, "%02d", mins % 60) + " h"
                 + "  ·  " + w.countBuildings(World.B_WOOD, true, view.hud.me) + " Holzfäller  ·  Land " + land
-                + (w.players > 1 ? "  ·  Wettbauen" : "");
+                + (w.ai > 0 ? "  ·  gegen Computer (" + (w.ai == 1 ? "leicht" : w.ai == 2 ? "mittel" : "schwer") + ")" : w.players > 1 ? "  ·  2 Spieler" : "");
         prefs.edit().putString("slot" + i, info).apply();
     }
 
@@ -167,7 +173,8 @@ public class MainActivity extends Activity implements Hud.Host, BtLink.Listener 
         if (session.role != Session.SOLO) return false;
         World w = read(slotFile(i));
         if (w == null) return false;
-        if (w.players > 1) w.mode = 2;
+        if (w.ai > 0) w.mode = 4;
+        else if (w.players > 1) w.mode = 2;
         else w.mode = 0;
         session.w = w;
         view.hud.me = 0;
@@ -316,9 +323,9 @@ public class MainActivity extends Activity implements Hud.Host, BtLink.Listener 
         if (!joining) {
             // Gastgeber: Spiel festlegen und an den Gast schicken
             World w;
-            if (hostMode == 2) {
+            if (hostMode == 2 || hostMode == 3) {
                 save();
-                w = new World(System.currentTimeMillis(), 2, 2);
+                w = new World(System.currentTimeMillis(), 2, hostMode);
                 w.goalType = hostGoalType;
                 w.goalValue = hostGoalValue;
                 view.hud.me = 0;
@@ -326,6 +333,11 @@ public class MainActivity extends Activity implements Hud.Host, BtLink.Listener 
                 view.setWorld(w);
             } else {
                 w = view.world();
+                if (w.players > 1) {
+                    w = new World(System.currentTimeMillis());
+                    session.w = w;
+                    view.setWorld(w);
+                }
                 w.mode = 1;
             }
             session.startHost(w, line -> {
@@ -376,11 +388,11 @@ public class MainActivity extends Activity implements Hud.Host, BtLink.Listener 
             // zurück zum eigenen Spiel
             World own = read(file());
             if (own == null) own = new World(System.currentTimeMillis());
-            own.mode = 0;
+            if (own.ai == 0) own.mode = 0;
             session.w = own;
             view.setWorld(own);
         } else if (w != null) {
-            w.mode = 0;
+            if (w.ai == 0) w.mode = 0;
             session.w = w;
         }
         if (role != Session.SOLO) view.hud.say(reason + " Du spielst wieder dein eigenes Spiel.");

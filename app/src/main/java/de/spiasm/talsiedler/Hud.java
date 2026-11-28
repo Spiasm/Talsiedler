@@ -10,7 +10,7 @@ import java.util.ArrayList;
 /** Bedienoberfläche: obere Leiste, Seitenfenster, Tipps, Menü. Wird direkt auf die Karte gezeichnet. */
 public class Hud {
     public interface Host {
-        void newGame();
+        void newGame(int ai);
 
         void save();
 
@@ -85,6 +85,8 @@ public class Hud {
     public int speed = 1;
     public boolean paused;
     private boolean menu, help, confirmNew, confirmDemolish;
+    private final RectF rf = new RectF();
+    private int helpPage;
     public boolean intro = true;
     private int win;
     public int fxVol = 7, ambVol = 5;
@@ -536,7 +538,8 @@ public class Hud {
         if (ownerOf != me) {
             String what = b != null ? World.B_NAMES[b.type] : f != null ? "Fahne" : "Weg";
             text(c, what, x, y, 24 * u, dark, true, Paint.Align.LEFT);
-            wrap(c, "Gehört Spieler " + World.P_NAMES[ownerOf] + ". Hier kannst du nichts ändern.", x, y + 34 * u, in, 18 * u, World.P_COLORS[ownerOf]);
+            float ey = wrap(c, "Gehört Spieler " + World.P_NAMES[ownerOf] + "." + (w.combat() ? "" : " Hier kannst du nichts ändern."), x, y + 34 * u, in, 18 * u, World.P_COLORS[ownerOf]);
+            if (b != null && w.combat() && b.done && (World.isMilitary(b.type) || World.isHq(b))) enemyPanel(c, b, x, ey + 8 * u, in, r);
             return;
         }
         if (b != null) {
@@ -564,7 +567,9 @@ public class Hud {
             } else if (World.isHq(b)) {
                 y = wrap(c, "Lager: " + b.stock[0] + " Stämme, " + b.stock[1] + " Bretter, " + b.stock[2] + " Steine", x, y, in, 18 * u, dark);
                 y = wrap(c, "Freie Siedler: " + w.pool(me) + " von " + World.POOL_MAX + " (alle 20 Sekunden kommt einer dazu)", x, y, in, 18 * u, dark);
-                y = wrap(c, "Soldaten: " + w.soldiers(me), x, y, in, 18 * u, dark);
+                y = wrap(c, "Soldaten: " + w.soldiers(me) + (w.combat() ? " (2 bleiben immer als Wache hier)" : ""), x, y, in, 18 * u, dark);
+                y = rankRow(c, w.ranks(me), x, y + 4 * u, in);
+                y = wrap(c, "Neue Soldaten: je 1 Schwert + 1 Schild + 1 freier Siedler (macht der Waffenschmied).", x, y, in, 16 * u, 0xFF5D4037);
             } else {
                 if (World.hasUtil(b.type))
                     y = wrap(c, "Auslastung: " + Math.round(b.util * 100) + " %" + (b.problem ? " – wartet gerade" : ""), x, y, in, 18 * u,
@@ -592,10 +597,16 @@ public class Hud {
                     for (int t2 = 0; t2 < World.NWARES; t2++) sum += b.stock[t2];
                     y = wrap(c, "Hier gelagert: " + sum + " Waren. Waren, die gerade niemand braucht, kommen ins nächste Lager.", x, y, in, 18 * u, dark);
                 }
-                if (World.isMilitary(b.type)) y = wrap(c, b.occupied ? "Besetzt. Hält das Land im Umkreis." : "Wartet auf einen Soldaten.", x, y, in, 18 * u, dark);
+                if (World.isMilitary(b.type)) {
+                    int inside = w.inside(b), cap = World.B_CAP[b.type];
+                    y = wrap(c, "Soldaten: " + inside + " von " + cap + (b.occupied ? " – hält das Land im Umkreis." : " – wartet auf Soldaten."), x, y, in, 18 * u, dark);
+                    y = rankRow(c, w.insideRanks(b), x, y + 4 * u, in);
+                    y = wrap(c, b.stopped ? "Ausbildung ist aus." : "Gold hier: " + b.stock[World.WARE_GOLD] + " – jedes Gold macht einen Soldaten einen Rang stärker.", x, y, in, 16 * u, 0xFF5D4037);
+                }
             }
             final World.Building fb = b;
-            boolean canStop = b.done && World.hasUtil(b.type);
+            boolean canStop = b.done && (World.hasUtil(b.type) || World.isMilitary(b.type));
+            boolean milB = World.isMilitary(b.type);
             boolean site = !b.done;
             boolean toolsBtn = b.done && b.type == World.B_TOOLS;
             float by = r.bottom - ((canStop || site ? 190 : 128) + (toolsBtn ? 62 : 0)) * u;
@@ -613,11 +624,13 @@ public class Hud {
             }
             if (canStop) {
                 by += 62 * u;
-                button(c, x, by, in, 52 * u, b.stopped ? "Weiter arbeiten" : "Arbeit stoppen", b.stopped ? 0xFF2E7D32 : 0xFF6D4C41, true,
+                button(c, x, by, in, 52 * u, milB ? (b.stopped ? "Ausbildung einschalten" : "Ausbildung ausschalten") : b.stopped ? "Weiter arbeiten" : "Arbeit stoppen",
+                        b.stopped ? 0xFF2E7D32 : 0xFF6D4C41, true,
                         () -> {
                             boolean stop = !fb.stopped;
                             host.exec(new int[]{World.C_STOP, me, fb.id, stop ? 1 : 0});
-                            say(stop ? World.B_NAMES[fb.type] + " macht Pause." : World.B_NAMES[fb.type] + " arbeitet wieder.");
+                            if (World.isMilitary(fb.type)) say(stop ? "Hier wird kein Gold mehr gebraucht." : "Gold wird wieder hierher gebracht.");
+                            else say(stop ? World.B_NAMES[fb.type] + " macht Pause." : World.B_NAMES[fb.type] + " arbeitet wieder.");
                         });
             }
             if (!World.isHq(b))
@@ -729,8 +742,8 @@ public class Hud {
             y += 46 * u;
             types = buildTab == 0 ? new int[]{World.B_WOOD, World.B_QUARRY, World.B_FOREST, World.B_SAW, World.B_STORE, World.B_SCOUT}
                     : buildTab == 1 ? new int[]{World.B_FISH, World.B_HUNT, World.B_WELL, World.B_FARM, World.B_MILL, World.B_BAKERY, World.B_PIGS, World.B_BUTCHER}
-                    : buildTab == 2 ? new int[]{World.B_SMELTER, World.B_TOOLS}
-                    : new int[]{World.B_GUARD, World.B_TOWER};
+                    : buildTab == 2 ? new int[]{World.B_SMELTER, World.B_TOOLS, World.B_ARMORY}
+                    : new int[]{World.B_GUARD, World.B_TOWER, World.B_FORT};
             if (buildTab == 2 && size > 0)
                 wrap(c, "Minen baust du direkt auf einem Berg: dort hintippen.", x, y + 240 * u, in, 16 * u, 0xFF5D4037);
         }
@@ -833,17 +846,105 @@ public class Hud {
         y0 += bh + gap;
         button(c, bx, y0, bw, bh, "Titelbild", 0xFF5D6B3A, true, () -> { intro = true; menu = false; });
         boolean solo = host.role() == 0;
-        button(c, bx2, y0, bw, bh, confirmNew ? "Wirklich?" : "Neues Spiel", confirmNew ? 0xFFB71C1C : 0xFF8D3A2A, solo, () -> {
-            if (!confirmNew) confirmNew = true;
-            else {
-                confirmNew = false;
-                menu = false;
-                select(-1);
-                ren.roadFrom = -1;
-                host.newGame();
-            }
-        });
+        button(c, bx2, y0, bw, bh, "Neues Spiel", 0xFF8D3A2A, solo, () -> confirmNew = true);
+        if (confirmNew) {
+            float nw2 = bw * 2 + gap, nh = bh * 5 + gap * 5 + 120 * u;
+            RectF nr = rect(bx, r.top + 70 * u, bx + nw2, r.top + 70 * u + nh);
+            box(c, rect(nr.left - 14 * u, nr.top - 10 * u, nr.right + 14 * u, nr.bottom + 10 * u), 0xFFE9DCC0, 16 * u);
+            btns.add(new Btn(rect(nr.left - 14 * u, nr.top - 10 * u, nr.right + 14 * u, nr.bottom + 10 * u), () -> { }, null));
+            text(c, "Neues Spiel – wie möchtest du spielen?", vw / 2f, nr.top + 30 * u, 20 * u, 0xFF3B2A1A, true, Paint.Align.CENTER);
+            float ny = nr.top + 50 * u;
+            button(c, bx, ny, nw2, bh, "Allein aufbauen (ohne Gegner)", 0xFF2E7D32, true, () -> startNew(0));
+            ny += bh + gap + 28 * u;
+            text(c, "Gegen den Computer (Rot):", bx, ny - 10 * u, 17 * u, 0xFF6D5A44, true, Paint.Align.LEFT);
+            float tw3 = (nw2 - 2 * gap) / 3;
+            button(c, bx, ny, tw3, bh, "Leicht", 0xFF8D6E4A, true, () -> startNew(1));
+            button(c, bx + tw3 + gap, ny, tw3, bh, "Mittel", 0xFFB26A00, true, () -> startNew(2));
+            button(c, bx + 2 * (tw3 + gap), ny, tw3, bh, "Schwer", 0xFFB71C1C, true, () -> startNew(3));
+            ny += bh + gap;
+            button(c, bx, ny, nw2, bh, "Abbrechen", 0xFF6D5A44, true, () -> confirmNew = false);
+        }
         text(c, "Das Spiel wird automatisch gespeichert.", vw / 2f, r.bottom - 34 * u, 15 * u, 0xFF6D5A44, false, Paint.Align.CENTER);
+    }
+
+    private void startNew(int ai) {
+        confirmNew = false;
+        menu = false;
+        select(-1);
+        ren.roadFrom = -1;
+        host.newGame(ai);
+        say(ai == 0 ? "Neues Spiel gestartet." : "Neues Spiel gegen den Computer (Rot). Er sitzt im Osten der Karte – viel Glück!");
+    }
+
+    private int attackTarget = -1, attackN = 0;
+
+    /** Fenster für ein gegnerisches Militärgebäude: Soldaten ansehen und angreifen */
+    private void enemyPanel(Canvas c, World.Building b, float x, float y, float in, RectF r) {
+        int dark = 0xFF3B2A1A;
+        c.save();
+        float[] ib = Art.BOX[b.type];
+        float isc = Math.min(2.2f * u, Math.min(84 * u / (ib[3] - ib[1]), in * 0.7f / (ib[2] - ib[0])));
+        c.translate(x + in / 2, y + 4 * u - ib[1] * isc);
+        c.scale(isc, isc);
+        ren.bannerFor(b.player);
+        ren.scaleHint = isc;
+        ren.buildingSprite(c, b.type, 0, 0, now);
+        ren.scaleHint = 0;
+        c.restore();
+        ren.bannerFor(me);
+        y += 100 * u;
+        int[] rk = w.insideRanks(b);
+        int n = 0;
+        for (int v : rk) n += v;
+        y = wrap(c, "Soldaten drin: " + n, x, y, in, 18 * u, dark);
+        y = rankRow(c, rk, x, y + 4 * u, in);
+        int avail = w.attackersFor(b, me);
+        if (attackTarget != b.id) {
+            attackTarget = b.id;
+            attackN = avail;
+        }
+        attackN = Math.max(avail > 0 ? 1 : 0, Math.min(attackN, avail));
+        if (!w.canAttack(b, me)) {
+            wrap(c, b.occupied || World.isHq(b) ? "Das kannst du gerade nicht angreifen." : "Noch niemand drin – hier gibt es nichts zu erobern.", x, y + 8 * u, in, 17 * u, 0xFF5D4037);
+            return;
+        }
+        if (avail == 0) {
+            wrap(c, "Keine Soldaten in der Nähe. Angreifen können Soldaten aus deinen Wachgebäuden (und dem Hauptquartier), die höchstens "
+                    + World.ATTACK_RANGE + " Felder weit weg sind. Jedes Gebäude behält einen Soldaten.", x, y + 8 * u, in, 17 * u, 0xFF5D4037);
+            return;
+        }
+        y = wrap(c, "So viele Soldaten können angreifen: " + avail, x, y + 8 * u, in, 18 * u, dark);
+        float by = r.bottom - 190 * u;
+        float bw = 70 * u;
+        final World.Building fb = b;
+        button(c, x, by, bw, 52 * u, "–", 0xFF8D6E4A, attackN > 1, () -> attackN--);
+        text(c, attackN + (attackN == 1 ? " Soldat" : " Soldaten"), x + in / 2, by + 34 * u, 22 * u, dark, true, Paint.Align.CENTER);
+        button(c, x + in - bw, by, bw, 52 * u, "+", 0xFF8D6E4A, attackN < avail, () -> attackN++);
+        button(c, x, by + 62 * u, in, 60 * u, "Angreifen!", 0xFFB71C1C, true, () -> {
+            host.exec(new int[]{World.C_ATTACK, me, fb.id, attackN});
+            say(attackN + (attackN == 1 ? " Soldat zieht" : " Soldaten ziehen") + " los. Sie kämpfen einzeln gegen die Verteidiger.");
+            select(-1);
+        });
+    }
+
+    /** kleine Helme in Rangfarbe mit Anzahl */
+    private float rankRow(Canvas c, int[] rk, float x, float y, float in) {
+        float cx = x;
+        for (int k = 0; k < 5; k++) {
+            if (rk[k] == 0) continue;
+            p.setColor(Renderer.RANK_COL[k]);
+            rf.set(cx, y, cx + 20 * u, y + 16 * u);
+            c.drawArc(rf, 180, 180, true, p);
+            c.drawRect(cx, y + 8 * u, cx + 20 * u, y + 11 * u, p);
+            text(c, rk[k] + "× " + World.RANK_NAMES[k], cx + 24 * u, y + 13 * u, 13.5f * u, 0xFF3B2A1A, false, Paint.Align.LEFT);
+            p.setTextSize(13.5f * u);
+            cx += 34 * u + p.measureText(rk[k] + "× " + World.RANK_NAMES[k]);
+            if (cx > x + in - 120 * u) {
+                cx = x;
+                y += 22 * u;
+            }
+        }
+        return y + 30 * u;
     }
 
     private static final String[] HELP = {
@@ -853,13 +954,15 @@ public class Hud {
             "3. Auf jedem Wegstück zwischen zwei Fahnen arbeitet ein Träger. Er reicht die Waren von Fahne zu Fahne weiter.",
             "4. Ein Bauarbeiter kommt, sobald Bretter und Steine da sind, wird gebaut. Danach zieht ein Arbeiter ein.",
             "5. Holzfäller fällt Bäume → Sägewerk macht Bretter. Förster pflanzt neue Bäume. Steinbruch holt Steine.",
-            "6. Wachstube/Wachturm an der Grenze: ein Soldat zieht ein und dein Land wächst.",
+            "6. Wachstube (2 Soldaten), Wachturm (4) und Festung (8) an der Grenze: sobald ein Soldat drin ist, wächst dein Land.",
             "7. Viel benutzte Wege werden gepflastert (schneller) und bekommen bei noch mehr Verkehr einen zweiten Träger.",
             "8. Nahrung: Fischer (am Wasser), Jäger (im Wald), Bauernhof → Mühle → Bäckerei (+ Brunnen), Schweinezucht → Metzgerei.",
             "9. Erkunden: An jeder Fahne kannst du einen Späher losschicken – er deckt den Nebel um die Fahne herum auf. Bergbau: Geologen an eine Fahne am Berg schicken, dann die passende Mine auf den Berg bauen. Minen brauchen Nahrung. Eisenschmelze: Erz + Kohle → Eisen. Werkzeugmacher: Eisen + Brett → Werkzeug.",
             "10. Jeder Beruf braucht sein Werkzeug (Axt, Säge, Spitzhacke …). Fehlt eins, steht es beim Gebäude. Menü → „Werkzeug“ bestimmt, was zuerst gemacht wird.",
-            "11. Lagerhaus: zweites Lager, kurze Wege. Späherhütte: der Späher erkundet den Nebel. Bei Baustellen: „Zuerst bauen“.",
-            "12. Zu zweit: Menü → „2 Spieler“. Die Tablets einmal in den Android-Einstellungen per Bluetooth koppeln. Einer tippt „Spiel erstellen“, der andere wählt dieses Tablet aus der Liste.",
+            "11. Soldaten: Der Waffenschmied macht aus Eisen + Kohle abwechselnd Schwert und Schild. Im Hauptquartier wird daraus mit einem freien Siedler ein neuer Soldat. Gold in einem Wachgebäude macht Soldaten stärker (5 Ränge: Helmfarbe grau, bronze, silber, blau, gold).",
+            "12. Kampf (gegen den Computer oder im Bluetooth-Kampf): Gegnerisches Wachgebäude antippen → Anzahl wählen → „Angreifen!“. Die Soldaten kämpfen einzeln gegen die Verteidiger. Gewinnen sie, gehört das Gebäude dir – alles vom Gegner auf dem neuen Land brennt ab. Wer das Hauptquartier des anderen erobert, gewinnt.",
+            "13. Lagerhaus: zweites Lager, kurze Wege. Späherhütte: der Späher erkundet den Nebel. Bei Baustellen: „Zuerst bauen“.",
+            "14. Zu zweit: Menü → „2 Spieler“. Die Tablets einmal in den Android-Einstellungen per Bluetooth koppeln. Einer tippt „Spiel erstellen“, der andere wählt dieses Tablet aus der Liste.",
             "Bedienen: Mit einem Finger schieben, mit zwei Fingern zoomen. „Bauplätze“ zeigt, wo was hinpasst: gelb = klein, orange = groß. „Auslastung“ zeigt, wie fleißig jedes Haus ist. Oben auf die Waren tippen öffnet das Lager. Die kleine Karte unten links bringt dich mit einem Tipp überall hin.",
     };
 
@@ -869,9 +972,19 @@ public class Hud {
         RectF r = rect(vw / 2f - mw / 2, 40 * u, vw / 2f + mw / 2, 40 * u + mh);
         box(c, r, 0xFFE9DCC0, 18 * u);
         text(c, "So geht's", r.left + 30 * u, r.top + 50 * u, 30 * u, 0xFF3B2A1A, true, Paint.Align.LEFT);
+        int[] starts = {0, 7, 12, HELP.length};
+        int pages = starts.length - 1;
+        helpPage = Math.max(0, Math.min(pages - 1, helpPage));
+        text(c, "Seite " + (helpPage + 1) + " von " + pages, r.right - 30 * u, r.top + 50 * u, 17 * u, 0xFF8D6E4A, false, Paint.Align.RIGHT);
         float y = r.top + 92 * u;
-        for (String s : HELP) y = wrap(c, s, r.left + 30 * u, y, mw - 60 * u, 19 * u, 0xFF3B2A1A) + 8 * u;
-        button(c, r.right - 200 * u, r.bottom - 76 * u, 170 * u, 56 * u, "Alles klar", 0xFF2E7D32, true, () -> help = false);
+        for (int i = starts[helpPage]; i < starts[helpPage + 1]; i++)
+            y = wrap(c, HELP[i], r.left + 30 * u, y, mw - 60 * u, 19 * u, 0xFF3B2A1A) + 8 * u;
+        if (helpPage > 0)
+            button(c, r.left + 30 * u, r.bottom - 76 * u, 170 * u, 56 * u, "Zurück", 0xFF8D6E4A, true, () -> helpPage--);
+        if (helpPage < pages - 1)
+            button(c, r.right - 200 * u, r.bottom - 76 * u, 170 * u, 56 * u, "Weiter", 0xFF1565C0, true, () -> helpPage++);
+        else
+            button(c, r.right - 200 * u, r.bottom - 76 * u, 170 * u, 56 * u, "Alles klar", 0xFF2E7D32, true, () -> { help = false; helpPage = 0; });
     }
 
     // ---------- Titelbild ----------
@@ -1005,12 +1118,12 @@ public class Hud {
             else workers++;
         }
         float x = r.left + 26 * u, y = r.top + 78 * u, in = r.width() - 52 * u;
-        String[] groups = {"Baustoffe", "Nahrung", "Bergbau & Metall", "Werkzeug"};
-        int[][] gw = {{0, 1, 2}, {3, 4, 5, 6, 7, 8, 9}, {10, 11, 12, 13}, {14, 15, 16, 17, 18, 19, 20, 21, 22, 23}};
+        String[] groups = {"Baustoffe", "Nahrung", "Bergbau & Metall", "Werkzeug", "Waffen"};
+        int[][] gw = {{0, 1, 2}, {3, 4, 5, 6, 7, 8, 9}, {10, 11, 12, 13}, {14, 15, 16, 17, 18, 19, 20, 21, 22, 23}, {24, 25}};
         float cw = in / 10f, ch = 74 * u;
         float gx = x;
         // erste Zeile: Baustoffe + Bergbau, zweite: Nahrung, dritte: Werkzeug
-        int[][] layout = {{0, 2}, {1}, {3}};
+        int[][] layout = {{0, 2}, {1, 4}, {3}};
         for (int[] row : layout) {
             gx = x;
             for (int gi : row) {
@@ -1273,9 +1386,10 @@ public class Hud {
             button(c, x, r.bottom - 84 * u, in, 58 * u, st == 3 ? "Verbindung trennen" : "Abbrechen", 0xFF8D3A2A, true, () -> host.mpLeave());
             if (st == 3) {
                 float yy = r.top + 200 * u;
-                String mode = w.mode == 1 ? "Miteinander – ihr baut zusammen an einer Siedlung." : w.mode == 2 ? "Wettbauen – " + goalText() + "." : "";
+                String mode = w.mode == 1 ? "Miteinander – ihr baut zusammen an einer Siedlung." : w.mode == 2 ? "Wettbauen – " + goalText() + "."
+                        : w.mode == 3 ? "Kampf – wer das Hauptquartier des anderen erobert, gewinnt." : "";
                 yy = wrap(c, mode, x, yy, in, 19 * u, dark) + 6 * u;
-                if (w.mode == 2)
+                if (w.mode == 2 || w.mode == 3)
                     wrap(c, "Du bist Spieler " + World.P_NAMES[me] + ".", x, yy, in, 19 * u, World.P_COLORS[me]);
                 if (host.role() == 2)
                     wrap(c, "Tempo und Pause bestimmt der Gastgeber.", x, yy + 34 * u, in, 17 * u, 0xFF6D5A44);
@@ -1285,12 +1399,13 @@ public class Hud {
         if (txt != null) y = wrap(c, txt, x, y, in, 17 * u, 0xFFB71C1C) + 6 * u;
         text(c, "Spiel erstellen (du bist der Gastgeber)", x, y, 20 * u, 0xFF8D6E4A, true, Paint.Align.LEFT);
         y += 14 * u;
-        float bw = (in - 24 * u) / 3;
+        float bw = (in - 36 * u) / 4;
         button(c, x, y, bw, 70 * u, "Miteinander", 0xFF2E7D32, true, () -> host.mpHost(1, 0, 0));
         button(c, x + bw + 12 * u, y, bw, 70 * u, "Wettbauen: Land", 0xFF6A1B9A, true, () -> host.mpHost(2, 1, 450));
         button(c, x + 2 * (bw + 12 * u), y, bw, 70 * u, "Wettbauen: Bretter", 0xFF6A1B9A, true, () -> host.mpHost(2, 2, 150));
+        button(c, x + 3 * (bw + 12 * u), y, bw, 70 * u, "Kampf", 0xFFB71C1C, true, () -> host.mpHost(3, 0, 0));
         y += 96 * u;
-        y = wrap(c, "Miteinander: dein jetziges Spiel wird geteilt. Wettbauen: neue Karte, jeder hat sein eigenes Hauptquartier – wer zuerst 450 Felder Land bzw. 150 Bretter im Lager hat, gewinnt.",
+        y = wrap(c, "Miteinander: dein jetziges Spiel wird geteilt. Wettbauen: neue Karte, jeder hat sein eigenes Hauptquartier – wer zuerst 450 Felder Land bzw. 150 Bretter im Lager hat, gewinnt. Kampf: neue Karte, wer das Hauptquartier des anderen erobert, gewinnt.",
                 x, y, in, 16 * u, 0xFF6D5A44) + 14 * u;
         text(c, "Beitreten (Spiel des anderen)", x, y, 20 * u, 0xFF8D6E4A, true, Paint.Align.LEFT);
         y += 14 * u;
@@ -1338,7 +1453,8 @@ public class Hud {
         box(c, rect(r.left + 6 * u, r.top + 8 * u, r.right + 6 * u, r.bottom + 8 * u), 0x66000000, 20 * u);
         box(c, r, 0xF2E9DCC0, 20 * u);
         text(c, wp == me ? "Gewonnen!" : "Leider verloren", vw / 2f, r.top + 70 * u, 46 * u, World.P_COLORS[wp], true, Paint.Align.CENTER);
-        text(c, "Spieler " + World.P_NAMES[wp] + " hat das Ziel zuerst erreicht.", vw / 2f, r.top + 116 * u, 20 * u, 0xFF3B2A1A, false, Paint.Align.CENTER);
+        text(c, w.combat() ? "Das Hauptquartier von " + World.P_NAMES[1 - wp] + " ist gefallen." : "Spieler " + World.P_NAMES[wp] + " hat das Ziel zuerst erreicht.",
+                vw / 2f, r.top + 116 * u, 20 * u, 0xFF3B2A1A, false, Paint.Align.CENTER);
         text(c, "Antippen zum Schließen – ihr könnt einfach weiterspielen.", vw / 2f, r.top + 150 * u, 16 * u, 0xFF6D5A44, false, Paint.Align.CENTER);
         btns.add(new Btn(rect(0, 0, vw, vh), () -> winnerSeen = w.winner, null));
     }

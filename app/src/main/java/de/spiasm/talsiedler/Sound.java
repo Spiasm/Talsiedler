@@ -11,7 +11,7 @@ import java.util.Random;
 
 /** Spielt die erzeugten Töne ab: Arbeitsgeräusche an der richtigen Stelle, Umgebung, Knöpfe. */
 public class Sound {
-    private static final int VERSION = 4;
+    private static final int VERSION = 5;
     private final SoundPool pool;
     private final int[] ids = new int[Synth.COUNT];
     private final HashSet<Integer> ready = new HashSet<>();
@@ -88,6 +88,9 @@ public class Sound {
             case Synth.S_SWISH: return 0.45f;
             case Synth.S_OINK: return 0.4f;
             case Synth.S_SOB: return 0.6f;
+            case Synth.S_CLASH: return 0.45f;
+            case Synth.S_DIE: return 0.6f;
+            case Synth.S_FIRE: return 0.6f;
             default: return 0.8f;
         }
     }
@@ -102,7 +105,7 @@ public class Sound {
             for (int[] e : ev) {
                 if (gamePaused || played >= 5) break;
                 int id = e[0], n = e[1];
-                boolean global = id == Synth.S_DONE || id == Synth.S_LAND;
+                boolean global = id == Synth.S_DONE || id == Synth.S_LAND || id == Synth.S_HORN;
                 float vol;
                 if (global) vol = fx * 0.7f;
                 else {

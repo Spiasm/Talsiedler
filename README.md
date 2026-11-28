@@ -43,3 +43,10 @@ Ein Aufbauspiel für Android-Tablets im Stil der alten Siedler-Klassiker – mit
 - Späherhütte: der Späher erkundet den Nebel
 - Eisenschmelze und Werkzeugmacher; jeder Beruf braucht sein Werkzeug, Vorrang im Werkzeug-Fenster einstellbar
 - Lagerhaus, „Zuerst bauen“ für Baustellen, Bau-Menü mit Reitern, großes Lager-Fenster
+
+## Stufe 3 – Militär und Computergegner
+- Waffenschmied: Eisen + Kohle → abwechselnd Schwert und Schild; im Hauptquartier wird daraus mit einem freien Siedler ein Soldat
+- Wachstube (2 Soldaten), Wachturm (4), Festung (8); Gold bildet Soldaten aus (5 Ränge, Helmfarbe zeigt den Rang)
+- Angreifen: gegnerisches Wachgebäude antippen, Anzahl wählen; Zweikämpfe an der Fahne, erobertes Gebäude wechselt den Besitzer, Gegnerisches auf neuem Land brennt ab
+- Wer das Hauptquartier des anderen erobert, gewinnt
+- Neues Spiel: allein oder gegen den Computer (leicht, mittel, schwer); 2 Spieler über Bluetooth zusätzlich als „Kampf“

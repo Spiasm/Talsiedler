@@ -10,7 +10,7 @@ public final class Synth {
     public static final int S_CHOP = 1, S_CLINK = 2, S_DIG = 3, S_HAMMER = 4, S_SAW = 5, S_TREEFALL = 6, S_DONE = 7,
             S_LAND = 8, S_DROP = 9, S_PAVE = 10, S_CLICK = 11, S_PLACE = 12, S_ERROR = 13,
             S_BIRD1 = 14, S_BIRD2 = 15, S_BIRD3 = 16, S_WIND = 17, S_WATER = 18, S_MSG = 19,
-            S_SPLASH = 20, S_BOW = 21, S_SWISH = 22, S_OINK = 23, S_SOB = 24, COUNT = 25;
+            S_SPLASH = 20, S_BOW = 21, S_SWISH = 22, S_OINK = 23, S_SOB = 24, S_CLASH = 25, S_DIE = 26, S_HORN = 27, S_FIRE = 28, COUNT = 29;
 
     private Synth() {
     }
@@ -354,6 +354,62 @@ public final class Synth {
                 lowpass(br, 0.12f);
                 for (int i = 0; i < a.length; i++) a[i] += br[i] * 0.25f * Math.min(1, Math.abs(a[i]) * 3);
                 lowpass(a, 0.4f);
+                break;
+            }
+            case S_CLASH: { // Schwerter: metallisches Klirren
+                a = buf(0.45f);
+                float[] fr = {1830, 2470, 3120, 4410};
+                for (int i = 0; i < a.length; i++) {
+                    float t = i / (float) RATE, v = 0;
+                    for (int k = 0; k < fr.length; k++) v += (float) Math.sin(2 * Math.PI * fr[k] * t + k) * (1f / (k + 1));
+                    a[i] = v * (float) Math.exp(-t * 11) * 0.5f;
+                }
+                float[] nz = noise(0.03f, r);
+                add(a, nz, 0, 0.8f);
+                break;
+            }
+            case S_DIE: { // Aufstöhnen und Aufprall
+                a = buf(0.8f);
+                float ph = 0;
+                for (int i = 0; i < 0.45f * RATE; i++) {
+                    float t = i / (float) RATE, f = 220 - 120 * t / 0.45f;
+                    ph += f / RATE;
+                    float v = (float) (Math.sin(2 * Math.PI * ph) + 0.5 * Math.sin(4 * Math.PI * ph) + 0.3 * Math.sin(6 * Math.PI * ph));
+                    a[i] += v * (float) Math.sin(Math.PI * t / 0.45f) * 0.35f;
+                }
+                float[] th = noise(0.18f, r);
+                lowpass(th, 0.08f);
+                for (int i = 0; i < th.length; i++) th[i] *= (float) Math.exp(-i / (float) RATE * 25) * 3f;
+                add(a, th, (int) (0.5f * RATE), 1f);
+                lowpass(a, 0.5f);
+                break;
+            }
+            case S_HORN: { // tiefes Kriegshorn
+                a = buf(1.4f);
+                float ph = 0;
+                for (int i = 0; i < a.length; i++) {
+                    float t = i / (float) RATE;
+                    float f = t < 0.5f ? 146 : 174;
+                    ph += f / RATE;
+                    float saw = (ph % 1f) * 2 - 1;
+                    float e = Math.min(1, t / 0.06f) * (t > 1.2f ? (1.4f - t) / 0.2f : 1) * (t > 0.46f && t < 0.52f ? 0.4f : 1);
+                    a[i] = saw * e * 0.5f;
+                }
+                lowpass(a, 0.18f);
+                lowpass(a, 0.3f);
+                break;
+            }
+            case S_FIRE: { // Feuer prasselt
+                a = noise(1.6f, r);
+                lowpass(a, 0.3f);
+                for (int i = 0; i < a.length; i++) {
+                    float t = i / (float) RATE;
+                    a[i] *= 0.25f * Math.min(1, t * 4) * Math.min(1, (1.6f - t) * 3);
+                }
+                for (int k = 0; k < 26; k++) {
+                    int at = r.nextInt(a.length - 400);
+                    for (int i = 0; i < 300; i++) a[at + i] += (r.nextFloat() * 2 - 1) * (float) Math.exp(-i / 40f) * 0.9f;
+                }
                 break;
             }
             default:

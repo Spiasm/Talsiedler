@@ -26,13 +26,13 @@ public class World implements Serializable {
     public static final int WARE_LOG = 0, WARE_BOARD = 1, WARE_STONE = 2, WARE_FISH = 3, WARE_MEAT = 4, WARE_BREAD = 5,
             WARE_GRAIN = 6, WARE_FLOUR = 7, WARE_WATER = 8, WARE_PIG = 9, WARE_COAL = 10, WARE_IRONORE = 11, WARE_GOLD = 12,
             WARE_IRON = 13, T_AXE = 14, T_SAW = 15, T_PICK = 16, T_HAMMER = 17, T_SHOVEL = 18, T_ROD = 19, T_SCYTHE = 20,
-            T_BOW = 21, T_CLEAVER = 22, T_ROLLER = 23, NWARES = 24, FIRST_TOOL = 14, NTOOLS = 10;
+            T_BOW = 21, T_CLEAVER = 22, T_ROLLER = 23, WARE_SWORD = 24, WARE_SHIELD = 25, NWARES = 26, FIRST_TOOL = 14, NTOOLS = 10;
     public static final String[] WARE_NAMES = {"Baumstamm", "Brett", "Stein", "Fisch", "Fleisch", "Brot", "Getreide", "Mehl",
             "Wasser", "Schwein", "Kohle", "Eisenerz", "Gold", "Eisen", "Axt", "Säge", "Spitzhacke", "Hammer", "Schaufel", "Angel",
-            "Sense", "Bogen", "Beil", "Nudelholz"};
+            "Sense", "Bogen", "Beil", "Nudelholz", "Schwert", "Schild"};
     public static final String[] WARE_PLURAL = {"Baumstämme", "Bretter", "Steine", "Fische", "Fleisch", "Brote", "Getreide", "Mehl",
             "Wasser", "Schweine", "Kohle", "Eisenerz", "Gold", "Eisen", "Äxte", "Sägen", "Spitzhacken", "Hämmer", "Schaufeln", "Angeln",
-            "Sensen", "Bögen", "Beile", "Nudelhölzer"};
+            "Sensen", "Bögen", "Beile", "Nudelhölzer", "Schwerter", "Schilde"};
     /** Bodenschätze: 1 Kohle, 2 Eisen, 3 Gold, 4 Granit */
     public static final String[] RES_NAMES = {"", "Kohle", "Eisenerz", "Gold", "Granit"};
 
@@ -41,37 +41,44 @@ public class World implements Serializable {
     }
 
     public static boolean isTool(int t) {
-        return t >= FIRST_TOOL && t < NWARES;
+        return t >= FIRST_TOOL && t < FIRST_TOOL + NTOOLS;
+    }
+
+    /** Waren, die immer ins Hauptquartier gehören (Werkzeug, Waffen) */
+    public static boolean toHq(int t) {
+        return isTool(t) || t == WARE_SWORD || t == WARE_SHIELD;
     }
 
     public static final int B_HQ = 0, B_WOOD = 1, B_FOREST = 2, B_QUARRY = 3, B_SAW = 4, B_GUARD = 5, B_TOWER = 6,
             B_FISH = 7, B_HUNT = 8, B_WELL = 9, B_FARM = 10, B_MILL = 11, B_BAKERY = 12, B_PIGS = 13, B_BUTCHER = 14,
-            B_COAL = 15, B_IRON = 16, B_GOLD = 17, B_GRANITE = 18, B_SMELTER = 19, B_TOOLS = 20, B_STORE = 21, B_SCOUT = 22, NB = 23;
+            B_COAL = 15, B_IRON = 16, B_GOLD = 17, B_GRANITE = 18, B_SMELTER = 19, B_TOOLS = 20, B_STORE = 21, B_SCOUT = 22, B_ARMORY = 23, B_FORT = 24, NB = 25;
     public static final String[] B_NAMES = {"Hauptquartier", "Holzfäller", "Förster", "Steinbruch", "Sägewerk", "Wachstube", "Wachturm",
             "Fischer", "Jäger", "Brunnen", "Bauernhof", "Mühle", "Bäckerei", "Schweinezucht", "Metzgerei",
-            "Kohlemine", "Eisenmine", "Goldmine", "Granitmine", "Eisenschmelze", "Werkzeugmacher", "Lagerhaus", "Späherhütte"};
+            "Kohlemine", "Eisenmine", "Goldmine", "Granitmine", "Eisenschmelze", "Werkzeugmacher", "Lagerhaus", "Späherhütte", "Waffenschmied", "Festung"};
     /** 1 klein, 2 mittel, 3 groß, 4 Mine (auf dem Berg) */
-    public static final int[] B_SIZE = {3, 1, 1, 1, 2, 1, 2, 1, 1, 1, 2, 2, 2, 2, 2, 4, 4, 4, 4, 2, 2, 2, 1};
+    public static final int[] B_SIZE = {3, 1, 1, 1, 2, 1, 2, 1, 1, 1, 2, 2, 2, 2, 2, 4, 4, 4, 4, 2, 2, 2, 1, 2, 2};
     public static final int[][] B_COST = {{0, 0, 0}, {0, 2, 0}, {0, 2, 0}, {0, 2, 0}, {0, 2, 2}, {0, 2, 1}, {0, 4, 3},
             {0, 2, 0}, {0, 2, 0}, {0, 2, 0}, {0, 3, 3}, {0, 2, 2}, {0, 2, 2}, {0, 3, 2}, {0, 2, 2},
-            {0, 4, 0}, {0, 4, 0}, {0, 4, 0}, {0, 4, 0}, {0, 2, 3}, {0, 2, 2}, {0, 4, 3}, {0, 2, 1}};
-    public static final int[] B_RADIUS = {9, 0, 0, 0, 0, 6, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-    public static final int[] B_WORK_RADIUS = {0, 6, 5, 7, 0, 0, 0, 6, 10, 0, 3, 0, 0, 0, 0, 2, 2, 2, 2, 0, 0, 0, 17};
+            {0, 4, 0}, {0, 4, 0}, {0, 4, 0}, {0, 4, 0}, {0, 2, 3}, {0, 2, 2}, {0, 4, 3}, {0, 2, 1}, {0, 2, 3}, {0, 6, 7}};
+    public static final int[] B_RADIUS = {9, 0, 0, 0, 0, 6, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 11};
+    /** Platz für Soldaten */
+    public static final int[] B_CAP = {0, 0, 0, 0, 0, 2, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8};
+    public static final int[] B_WORK_RADIUS = {0, 6, 5, 7, 0, 0, 0, 6, 10, 0, 3, 0, 0, 0, 0, 2, 2, 2, 2, 0, 0, 0, 17, 0, 0};
     /** was ein Gebäude verarbeitet (Minen: eins der drei Nahrungsmittel) */
     public static final int[][] RECIPE_IN = {{}, {}, {}, {}, {WARE_LOG}, {}, {}, {}, {}, {}, {}, {WARE_GRAIN},
             {WARE_FLOUR, WARE_WATER}, {WARE_GRAIN, WARE_WATER}, {WARE_PIG}, {WARE_FISH, WARE_MEAT, WARE_BREAD},
             {WARE_FISH, WARE_MEAT, WARE_BREAD}, {WARE_FISH, WARE_MEAT, WARE_BREAD}, {WARE_FISH, WARE_MEAT, WARE_BREAD},
-            {WARE_IRONORE, WARE_COAL}, {WARE_IRON, WARE_BOARD}, {}, {}};
+            {WARE_IRONORE, WARE_COAL}, {WARE_IRON, WARE_BOARD}, {}, {}, {WARE_IRON, WARE_COAL}, {}};
     /** was drinnen hergestellt wird (-1 = draußen gearbeitet, -2 = Werkzeug nach Wahl) */
     public static final int[] RECIPE_OUT = {-1, -1, -1, -1, WARE_BOARD, -1, -1, -1, -1, WARE_WATER, -1, WARE_FLOUR, WARE_BREAD,
-            WARE_PIG, WARE_MEAT, WARE_COAL, WARE_IRONORE, WARE_GOLD, WARE_STONE, WARE_IRON, -2, -1, -1};
-    public static final float[] RECIPE_TIME = {0, 0, 0, 0, 6, 0, 0, 0, 0, 9, 0, 8, 8, 14, 7, 9, 9, 9, 9, 9, 11, 0, 0};
+            WARE_PIG, WARE_MEAT, WARE_COAL, WARE_IRONORE, WARE_GOLD, WARE_STONE, WARE_IRON, -2, -1, -1, -3, -1};
+    public static final float[] RECIPE_TIME = {0, 0, 0, 0, 6, 0, 0, 0, 0, 9, 0, 8, 8, 14, 7, 9, 9, 9, 9, 9, 11, 0, 0, 12, 0};
     public static final String[] WORK_TEXT = {"", "", "", "", "Sägt Bretter", "", "", "", "", "Holt Wasser", "", "Mahlt Getreide",
             "Backt Brot", "Füttert die Schweine", "Schlachtet ein Schwein", "Baut Kohle ab", "Baut Eisenerz ab", "Baut Gold ab",
-            "Haut Granit", "Schmilzt Eisen", "Macht Werkzeug", "", ""};
+            "Haut Granit", "Schmilzt Eisen", "Macht Werkzeug", "", "", "Schmiedet Waffen", ""};
 
     public static boolean isMilitary(int type) {
-        return type == B_GUARD || type == B_TOWER;
+        return type == B_GUARD || type == B_TOWER || type == B_FORT;
     }
 
     /** Gebäude mit Arbeiter, dessen Auslastung zählt */
@@ -91,27 +98,31 @@ public class World implements Serializable {
 
     public static final int J_CARRIER = 0, J_BUILDER = 1, J_WOODCUTTER = 2, J_FORESTER = 3, J_MASON = 4, J_SAWYER = 5, J_SOLDIER = 6,
             J_FISHER = 7, J_HUNTER = 8, J_WELL = 9, J_FARMER = 10, J_MILLER = 11, J_BAKER = 12, J_PIGGER = 13, J_BUTCHER = 14,
-            J_MINER = 15, J_SMELTER = 16, J_SMITH = 17, J_SCOUT = 18, J_GEOLOGIST = 19, NJ = 20;
+            J_MINER = 15, J_SMELTER = 16, J_SMITH = 17, J_SCOUT = 18, J_GEOLOGIST = 19, J_ARMORER = 20, NJ = 21;
     public static final String[] J_NAMES = {"Träger", "Bauarbeiter", "Holzfäller", "Förster", "Steinmetz", "Schreiner", "Soldat",
             "Fischer", "Jäger", "Brunnenbauer", "Bauer", "Müller", "Bäcker", "Schweinezüchter", "Metzger", "Bergmann", "Schmelzer",
-            "Werkzeugmacher", "Späher", "Geologe"};
+            "Werkzeugmacher", "Späher", "Geologe", "Waffenschmied"};
     /** Werkzeug, das ein Beruf braucht (-1 = keins) */
     public static final int[] J_TOOL = {-1, T_HAMMER, T_AXE, T_SHOVEL, T_PICK, T_SAW, -1, T_ROD, T_BOW, -1, T_SCYTHE, -1, T_ROLLER,
-            -1, T_CLEAVER, T_PICK, -1, -1, -1, T_HAMMER};
+            -1, T_CLEAVER, T_PICK, -1, -1, -1, T_HAMMER, T_HAMMER};
     /** Beruf je Gebäude */
     public static final int[] B_JOB = {-1, J_WOODCUTTER, J_FORESTER, J_MASON, J_SAWYER, J_SOLDIER, J_SOLDIER, J_FISHER, J_HUNTER,
-            J_WELL, J_FARMER, J_MILLER, J_BAKER, J_PIGGER, J_BUTCHER, J_MINER, J_MINER, J_MINER, J_MINER, J_SMELTER, J_SMITH, -1, J_SCOUT};
+            J_WELL, J_FARMER, J_MILLER, J_BAKER, J_PIGGER, J_BUTCHER, J_MINER, J_MINER, J_MINER, J_MINER, J_SMELTER, J_SMITH, -1, J_SCOUT, J_ARMORER, J_SOLDIER};
 
     // Siedler-Zustände
     static final int S_TO_SITE = 1, S_INSIDE = 2, S_OUT_GO = 3, S_WORK = 4, S_OUT_BACK = 5, S_DELIVER = 6,
             S_BUILD = 7, S_RETURN = 8, S_SAW = 9;
+    // Soldaten im Kampf
+    public static final int A_MARCH = 30, A_WAIT = 31, A_DEFEND = 32, A_FIGHT = 33, A_BACKIN = 34, A_HOME = 35, A_DEAD = 36;
+    public static final String[] RANK_NAMES = {"Gefreiter", "Obergefreiter", "Feldwebel", "Offizier", "General"};
+    public static final int ATTACK_RANGE = 18;
     static final int C_GO = 20, C_IDLE = 21, C_FETCH = 22, C_CARRY = 23, C_DROPWAIT = 24, C_TOMID = 25;
 
     public static final int FLAG_CAP = 8;
 
     // Ereignisse für Töne
     public static final int E_CHOP = 1, E_CLINK = 2, E_DIG = 3, E_HAMMER = 4, E_SAW = 5, E_TREEFALL = 6, E_DONE = 7,
-            E_LAND = 8, E_DROP = 9, E_PAVE = 10, E_SPLASH = 20, E_BOW = 21, E_SWISH = 22, E_OINK = 23, E_SOB = 24;
+            E_LAND = 8, E_DROP = 9, E_PAVE = 10, E_SPLASH = 20, E_BOW = 21, E_SWISH = 22, E_OINK = 23, E_SOB = 24, E_CLASH = 25, E_DIE = 26, E_HORN = 27, E_FIRE = 28;
     static final float BUILD_PER_MAT = 3f;
     static final float TREE_GROW = 35f;
     static final float FIELD_GROW = 30f;
@@ -178,6 +189,9 @@ public class World implements Serializable {
         public boolean stopped, problem;
         /** Auslastung 0..1 (gleitender Mittelwert) */
         public float util;
+        /** Soldaten, die hierher gehören (Ids) */
+        public ArrayList<Integer> sol;
+        float trainT;
         int noticed;
         float noticeT;
 
@@ -223,6 +237,10 @@ public class World implements Serializable {
         public boolean sad;
         /** Späher, der von einer Fahne aus die Gegend erkundet */
         boolean roam;
+        /** Soldat: Rang 0..4, Lebenspunkte, Gegner (Id, 0 = keiner), Angriffsziel (Gebäude-Id, 0 = keins) */
+        public int rank, hp, foe, atk;
+        boolean turn;
+        public float swingT, hitT;
         /** Fischer: Wasserfeld, Jäger: Tier, Bauer: 1 = ernten */
         int aux;
 
@@ -307,6 +325,16 @@ public class World implements Serializable {
     public int hq;
     public int pool = 30;
     public int soldiers = 8;
+    /** Soldaten im Hauptquartier je Rang */
+    int[] ranks0, ranks1;
+    /** Computergegner: 0 = keiner, 1 leicht, 2 mittel, 3 schwer */
+    public int ai;
+    Ai brain;
+    /** abgebrannte Gebäude: {Knoten, Zeit, Größe} */
+    public ArrayList<float[]> ruins;
+    /** Bit je Spieler: Hauptquartier gefallen */
+    public int fallen;
+    float recruitT, trainTick;
     public float time;
     float poolT, demandT, requestT, rerouteT, growTick;
     int roadVer;
@@ -409,6 +437,76 @@ public class World implements Serializable {
         else soldiers1 += d;
     }
 
+    /** Soldaten im Hauptquartier, aufgeteilt nach Rang */
+    public int[] ranks(int pl) {
+        if (pl == 0) {
+            if (ranks0 == null) {
+                ranks0 = new int[5];
+                ranks0[0] = soldiers;
+            }
+            return ranks0;
+        }
+        if (ranks1 == null) {
+            ranks1 = new int[5];
+            ranks1[0] = soldiers1;
+        }
+        return ranks1;
+    }
+
+    void putSoldier(int pl, int rank) {
+        ranks(pl)[Math.max(0, Math.min(4, rank))]++;
+        addSoldiers(pl, 1);
+    }
+
+    /** Soldat aus dem Hauptquartier nehmen: stark = der beste, sonst der schwächste. -1 = keiner da. */
+    int takeSoldier(int pl, boolean strong) {
+        int[] r = ranks(pl);
+        for (int i = 0; i < 5; i++) {
+            int k = strong ? 4 - i : i;
+            if (r[k] > 0) {
+                r[k]--;
+                addSoldiers(pl, -1);
+                return k;
+            }
+        }
+        return -1;
+    }
+
+    public static int maxHp(int rank) {
+        return 3 + 2 * rank;
+    }
+
+    public boolean combat() {
+        return mode == 3 || mode == 4;
+    }
+
+    public ArrayList<Integer> sol(Building b) {
+        if (b.sol == null) b.sol = new ArrayList<>();
+        return b.sol;
+    }
+
+    /** Soldaten, die gerade im Gebäude sind */
+    public int inside(Building b) {
+        if (isHq(b)) return soldiers(b.player);
+        int n = 0;
+        for (int id : sol(b)) {
+            Settler x = settlers.get(id);
+            if (x != null && x.state == S_INSIDE && x.home == b.id) n++;
+        }
+        return n;
+    }
+
+    /** Ränge der Soldaten im Gebäude (Anzahl je Rang) */
+    public int[] insideRanks(Building b) {
+        if (isHq(b)) return ranks(b.player).clone();
+        int[] r = new int[5];
+        for (int id : sol(b)) {
+            Settler x = settlers.get(id);
+            if (x != null && x.state == S_INSIDE && x.home == b.id) r[Math.max(0, Math.min(4, x.rank))]++;
+        }
+        return r;
+    }
+
     public boolean[] exploredOf(int pl) {
         return pl == 0 || explored1 == null ? explored : explored1;
     }
@@ -427,7 +525,7 @@ public class World implements Serializable {
 
     // ---------------- Befehle (für Bedienung und 2-Spieler) ----------------
 
-    public static final int C_BUILD = 1, C_FLAG = 2, C_ROAD = 3, C_REMOVE = 4, C_STOP = 5, C_GEO = 6, C_PRIO = 7, C_TOOLPRIO = 8, C_SCOUT = 9;
+    public static final int C_BUILD = 1, C_FLAG = 2, C_ROAD = 3, C_REMOVE = 4, C_STOP = 5, C_GEO = 6, C_PRIO = 7, C_TOOLPRIO = 8, C_SCOUT = 9, C_ATTACK = 10;
 
     /** Befehl ausführen: {Art, Spieler, a, b} */
     public boolean apply(int[] c) {
@@ -455,6 +553,8 @@ public class World implements Serializable {
                 return sendGeologist(c[2], pl);
             case C_SCOUT:
                 return sendScout(c[2], pl);
+            case C_ATTACK:
+                return attack(c[2], pl, c[3]);
             case C_PRIO: {
                 Building b = buildings.get(c[2]);
                 if (b == null || b.player != pl || b.done) return false;
@@ -475,8 +575,9 @@ public class World implements Serializable {
     public long hash() {
         long h = steps * 31 + nextId;
         h = h * 31 + pool * 7 + pool1 * 13 + soldiers * 17 + soldiers1 * 19;
-        for (Settler s : settlers.values()) h = h * 31 + s.id * 7 + s.node * 3 + s.state + (s.next + 1) * 11;
-        for (Building b : buildings.values()) h = h * 31 + b.id + b.used * 5 + b.stock[0] * 7 + b.stock[1] * 11 + b.stock[2] * 13;
+        h = h * 31 + fallen * 5 + winner;
+        for (Settler s : settlers.values()) h = h * 31 + s.id * 7 + s.node * 3 + s.state + (s.next + 1) * 11 + s.hp * 13 + s.rank * 17 + s.foe;
+        for (Building b : buildings.values()) h = h * 31 + b.id + b.used * 5 + b.stock[0] * 7 + b.stock[1] * 11 + b.stock[2] * 13 + b.player * 19;
         for (Flag f : flags.values()) h = h * 31 + f.id + f.wares.size();
         for (int n = 0; n < N; n += 7) h = h * 31 + obj[n] * 3 + objVal[n];
         if (animals != null) for (Animal a : animals) h = h * 31 + a.id + a.node * 5 + (a.next + 1);
@@ -522,6 +623,8 @@ public class World implements Serializable {
             int dc = 999;
             for (int c : centers) dc = Math.min(dc, dist(n, c));
             if (dc < 12) v = v * (dc / 12f) + 0.48f * (1 - dc / 12f);
+            // zwei Spieler: immer ein Landweg zwischen den Hauptquartieren
+            if (players > 1 && Math.abs(y - cy) <= 2 && x >= 17 && x <= W - 18) v = Math.max(0.4f, Math.min(0.6f, v));
             if (v < 0.3f) {
                 terrain[n] = T_WATER;
                 height[n] = 0;
@@ -1133,9 +1236,17 @@ public class World implements Serializable {
     }
 
     public void removeBuilding(Building b) {
+        removeBuilding(b, true);
+    }
+
+    public void removeBuilding(Building b, boolean giveBack) {
         if (isHq(b)) return;
         buildings.remove(b.id);
-        returnWares(b);
+        if (giveBack) returnWares(b);
+        if (b.sol != null) for (int id : new ArrayList<>(b.sol)) {
+            Settler x = settlers.get(id);
+            if (x != null && x.home == b.id && (x.state == S_INSIDE || x.state == S_TO_SITE)) walkHome(x, false);
+        }
         obj[b.node] = O_NONE;
         for (int d = 0; d < 6; d++) {
             int m = nb(b.node, d);
@@ -1206,12 +1317,12 @@ public class World implements Serializable {
                 if (st >= 0 && f.wares.size() < FLAG_CAP) {
                     Ware w = new Ware();
                     w.type = t;
-                    w.dest = isTool(t) ? hq.id : st;
+                    w.dest = toHq(t) ? hq.id : st;
                     w.flag = f.id;
                     f.wares.add(w);
                     route(w, f);
                 } else {
-                    Building d = isTool(t) || direct == null ? hq : direct;
+                    Building d = toHq(t) || direct == null ? hq : direct;
                     if (d != null) d.stock[t]++;
                 }
             }
@@ -1253,19 +1364,43 @@ public class World implements Serializable {
     public void recomputeTerritory() {
         java.util.Arrays.fill(owned, false);
         if (owner == null) owner = new byte[N];
+        byte[] prev = owner.clone();
         java.util.Arrays.fill(owner, (byte) 0);
         if (explored == null) explored = new boolean[N];
         if (players > 1 && explored1 == null) explored1 = new boolean[N];
         if (landCount == null) landCount = new int[2];
+        int[][] bd = new int[players][N];
+        for (int[] row : bd) java.util.Arrays.fill(row, 999);
         for (Building b : buildings.values()) {
             int r = B_RADIUS[b.type];
-            if (r <= 0 || !b.occupied) continue;
+            if (r <= 0 || !b.occupied || b.player >= players) continue;
             boolean[] ex = exploredOf(b.player);
+            int[] row = bd[b.player];
             for (int m : around(b.node, r)) {
-                if (owner[m] == 0) owner[m] = (byte) (b.player + 1);
-                owned[m] = true;
+                int d = dist(m, b.node);
+                if (d < row[m]) row[m] = d;
             }
             for (int m : around(b.node, r + 3)) ex[m] = true;
+        }
+        for (int n = 0; n < N; n++) {
+            int best = -1;
+            if (players == 1) {
+                if (bd[0][n] < 999) best = 0;
+            } else {
+                boolean c0 = bd[0][n] < 999, c1 = bd[1][n] < 999;
+                if (c0 && c1) {
+                    if (bd[0][n] <= 1) best = 0;
+                    else if (bd[1][n] <= 1) best = 1;
+                    else if (prev[n] == 1) best = 0;
+                    else if (prev[n] == 2) best = 1;
+                    else best = bd[0][n] <= bd[1][n] ? 0 : 1;
+                } else if (c0) best = 0;
+                else if (c1) best = 1;
+            }
+            if (best >= 0) {
+                owner[n] = (byte) (best + 1);
+                owned[n] = true;
+            }
         }
         landCount[0] = landCount[1] = 0;
         for (int n = 0; n < N; n++) if (owner[n] > 0) landCount[owner[n] - 1]++;
@@ -1274,6 +1409,35 @@ public class World implements Serializable {
             for (int n = 0; n < N; n++) explored[n] |= explored1[n];
         }
         exploredVer++;
+    }
+
+    /** Nach einer Eroberung: alles, was jetzt auf fremdem Land steht, brennt ab. */
+    void enforceBorders() {
+        if (players < 2) return;
+        for (Road r : new ArrayList<>(roads.values())) {
+            boolean bad = false;
+            for (int n : r.path) if (owner[n] != r.player + 1) bad = true;
+            if (bad) removeRoad(r);
+        }
+        for (Building b : new ArrayList<>(buildings.values())) {
+            if (isHq(b) || !buildings.containsKey(b.id)) continue;
+            if (owner[b.node] != b.player + 1) burn(b);
+        }
+        for (Flag f : new ArrayList<>(flags.values())) {
+            if (!flags.containsKey(f.id)) continue;
+            Building h = hqB(f.player);
+            if (h != null && f.id == h.flag) continue;
+            if (owner[f.node] != f.player + 1) removeFlag(f);
+        }
+    }
+
+    /** Gebäude brennt ab (Waren sind verloren, die Leute laufen traurig heim). */
+    void burn(Building b) {
+        if (ruins == null) ruins = new ArrayList<>();
+        ruins.add(new float[]{b.node, time, B_SIZE[b.type]});
+        msg(B_NAMES[b.type] + " ist abgebrannt – das Land gehört jetzt dem Gegner", b.node, b.player);
+        ev(E_FIRE, b.node);
+        removeBuilding(b, false);
     }
 
     /** Nach dem Laden eines älteren Spielstands fehlende Teile ergänzen. */
@@ -1316,6 +1480,23 @@ public class World implements Serializable {
             toolsGiven = true;
         }
         if (producedTotal == null) producedTotal = new int[NWARES];
+        // Stufe 3 nachrüsten
+        if (profs0.length < NJ) profs0 = java.util.Arrays.copyOf(profs0, NJ);
+        if (profs1.length < NJ) profs1 = java.util.Arrays.copyOf(profs1, NJ);
+        if (producedTotal.length < NWARES) producedTotal = java.util.Arrays.copyOf(producedTotal, NWARES);
+        for (Building b : buildings.values()) {
+            b.grow();
+            if (isMilitary(b.type) && b.worker >= 0) {
+                Settler x = settlers.get(b.worker);
+                if (x != null && x.job == J_SOLDIER) {
+                    sol(b).add(x.id);
+                    if (x.hp <= 0) x.hp = maxHp(x.rank);
+                }
+                b.worker = -1;
+            }
+        }
+        for (Settler x : settlers.values()) if (x.job == J_SOLDIER && x.hp <= 0) x.hp = maxHp(x.rank);
+        if (ai > 0 && brain == null) brain = new Ai(1);
     }
 
     void ev(int type, int node) {
@@ -1480,6 +1661,15 @@ public class World implements Serializable {
         if (b.type == B_HQ || b.type == B_STORE && b.done) return 0;
         if (!b.done) return cost(b.type, t) - b.got[t] - b.incoming[t];
         if (b.stopped) return 0;
+        if (isMilitary(b.type)) {
+            if (t != WARE_GOLD) return 0;
+            boolean trainable = false;
+            for (int id : sol(b)) {
+                Settler x = settlers.get(id);
+                if (x != null && x.rank < 4) trainable = true;
+            }
+            return trainable ? Math.max(0, 2 - b.stock[t] - b.incoming[t]) : 0;
+        }
         int[] in = RECIPE_IN[b.type];
         if (in.length == 0) return 0;
         if (isMine(b.type)) {
@@ -1510,7 +1700,7 @@ public class World implements Serializable {
     }
 
     int chooseDest(int type, Flag f) {
-        if (isTool(type)) return hqId(f.player);
+        if (toHq(type)) return hqId(f.player);
         Route rt = dijkstra(f.id);
         int best = -1, bd = Integer.MAX_VALUE;
         for (Building b : buildings.values()) {
@@ -1544,7 +1734,7 @@ public class World implements Serializable {
     void route(Ware w, Flag f) {
         Building d = buildings.get(w.dest);
         if (d == null) {
-            int st = isTool(w.type) ? -1 : nearestStorage(f, -1);
+            int st = toHq(w.type) ? -1 : nearestStorage(f, -1);
             w.dest = st >= 0 ? st : hqId(f.player);
             d = buildings.get(w.dest);
             if (d == null) return;
@@ -1655,7 +1845,7 @@ public class World implements Serializable {
     /** Siedler ist zurück im Hauptquartier. */
     void backHome(Settler s) {
         settlers.remove(s.id);
-        if (s.job == J_SOLDIER) addSoldiers(s.player, 1);
+        if (s.job == J_SOLDIER) putSoldier(s.player, s.rank);
         else if (s.job == J_CARRIER) addPool(s.player, 1);
         else profs(s.player)[s.job]++;
     }
@@ -1681,6 +1871,381 @@ public class World implements Serializable {
         s.probes = 0;
         s.found = 0;
         return true;
+    }
+
+    // ---------------- Militär ----------------
+
+    /** Anwerben im Hauptquartier und Ausbildung mit Gold */
+    private void military(float dt) {
+        recruitT += dt;
+        if (recruitT >= 6f) {
+            recruitT = 0;
+            for (int pl = 0; pl < players; pl++) {
+                Building h = hqB(pl);
+                if (h == null || pool(pl) <= 0) continue;
+                if (h.stock[WARE_SWORD] > 0 && h.stock[WARE_SHIELD] > 0) {
+                    h.stock[WARE_SWORD]--;
+                    h.stock[WARE_SHIELD]--;
+                    addPool(pl, -1);
+                    putSoldier(pl, 0);
+                    msg("Ein neuer Soldat ist ausgebildet (Schwert + Schild)", h.node, pl);
+                }
+            }
+        }
+        trainTick += dt;
+        if (trainTick < 1f) return;
+        float step = trainTick;
+        trainTick = 0;
+        for (Building b : buildings.values()) {
+            if (!b.done || !isMilitary(b.type) || b.stopped || b.stock[WARE_GOLD] <= 0) continue;
+            Settler low = null;
+            for (int id : sol(b)) {
+                Settler x = settlers.get(id);
+                if (x != null && x.state == S_INSIDE && x.home == b.id && x.rank < 4 && (low == null || x.rank < low.rank)) low = x;
+            }
+            if (low == null) continue;
+            b.trainT += step;
+            if (b.trainT < 20f) continue;
+            b.trainT = 0;
+            b.stock[WARE_GOLD]--;
+            low.rank++;
+            low.hp = maxHp(low.rank);
+            ev(E_CLINK, b.node);
+            if (low.rank == 4) msg("Ein Soldat in der " + B_NAMES[b.type] + " ist jetzt General!", b.node, b.player);
+        }
+    }
+
+    /** Gebäude, aus denen Spieler pl gegen das Ziel angreifen kann */
+    public ArrayList<Building> attackSources(Building t, int pl) {
+        ArrayList<Building> out = new ArrayList<>();
+        for (Building b : buildings.values()) {
+            if (b.player != pl || !b.done) continue;
+            if (!(isHq(b) || isMilitary(b.type) && b.occupied)) continue;
+            if (dist(b.node, t.node) > ATTACK_RANGE) continue;
+            out.add(b);
+        }
+        out.sort((x, y) -> dist(x.node, t.node) - dist(y.node, t.node));
+        return out;
+    }
+
+    /** Wie viele Soldaten könnten angreifen? (jedes Gebäude behält einen) */
+    public int attackersFor(Building t, int pl) {
+        if (!canAttack(t, pl)) return 0;
+        int n = 0;
+        for (Building b : attackSources(t, pl)) n += Math.max(0, inside(b) - 1);
+        return n;
+    }
+
+    public boolean canAttack(Building t, int pl) {
+        if (t == null || !combat() || t.player == pl || !t.done) return false;
+        if ((fallen & (1 << t.player)) != 0 || (fallen & (1 << pl)) != 0) return false;
+        if (!(isHq(t) || isMilitary(t.type) && t.occupied)) return false;
+        return exploredOf(pl)[t.node];
+    }
+
+    public boolean attack(int tid, int pl, int count) {
+        Building t = buildings.get(tid);
+        if (!canAttack(t, pl) || count <= 0) return false;
+        Flag tf = flags.get(t.flag);
+        int sent = 0;
+        for (Building src : attackSources(t, pl)) {
+            int spare = inside(src) - 1;
+            while (spare > 0 && sent < count) {
+                Settler a = null;
+                if (isHq(src)) {
+                    int rk = takeSoldier(pl, true);
+                    if (rk < 0) break;
+                    a = spawn(J_SOLDIER, null, pl);
+                    a.rank = rk;
+                    a.hp = maxHp(rk);
+                    a.home = src.id;
+                } else {
+                    for (int id : sol(src)) {
+                        Settler x = settlers.get(id);
+                        if (x != null && x.state == S_INSIDE && x.home == src.id && (a == null || x.rank > a.rank)) a = x;
+                    }
+                    if (a == null) break;
+                }
+                a.node = src.node;
+                int[] path = walkPath(src.node, tf.node, 45);
+                if (path == null) {
+                    if (isHq(src)) {
+                        settlers.remove(a.id);
+                        putSoldier(pl, a.rank);
+                    }
+                    spare = 0;
+                    break;
+                }
+                a.visible = true;
+                a.state = A_MARCH;
+                a.atk = t.id;
+                a.foe = 0;
+                a.timer = 0;
+                setPath(a, path);
+                spare--;
+                sent++;
+            }
+            if (sent >= count) break;
+        }
+        if (sent == 0) return false;
+        msg("Angriff! " + sent + (sent == 1 ? " Soldat zieht" : " Soldaten ziehen") + " gegen " + (isHq(t) ? "das Hauptquartier" : "die " + B_NAMES[t.type]) + " von " + P_NAMES[t.player], t.node, pl);
+        msg("Achtung! Spieler " + P_NAMES[pl] + " greift deine " + (isHq(t) ? "Hauptquartier" : B_NAMES[t.type]) + " an!", t.node, t.player);
+        ev(E_HORN, t.node);
+        return true;
+    }
+
+    private void soldierThink(Settler s, float dt) {
+        switch (s.state) {
+            case A_MARCH:
+                s.state = A_WAIT;
+                s.timer = 0;
+                break;
+            case A_WAIT:
+                attackerWait(s, dt);
+                break;
+            case A_DEFEND: {
+                Settler f = settlers.get(s.foe);
+                if (f == null || f.state == A_DEAD) {
+                    defenderBack(s);
+                    break;
+                }
+                s.state = A_FIGHT;
+                f.state = A_FIGHT;
+                f.timer = 0.5f;
+                break;
+            }
+            case A_FIGHT:
+                if (s.atk != 0) duel(s, dt);
+                else {
+                    Settler f = settlers.get(s.foe);
+                    if (f == null || f.state == A_DEAD) defenderBack(s);
+                }
+                break;
+            case A_BACKIN: {
+                Building h = buildings.get(s.home);
+                if (h != null && h.player == s.player) {
+                    if (isHq(h)) backHome(s);
+                    else {
+                        s.state = S_INSIDE;
+                        s.visible = false;
+                        s.node = h.node;
+                    }
+                } else walkHome(s, false);
+                break;
+            }
+            case A_HOME: {
+                Building h = buildings.get(s.home);
+                s.atk = 0;
+                s.foe = 0;
+                if (h != null && h.player == s.player && h.done) {
+                    if (isHq(h)) backHome(s);
+                    else {
+                        if (!sol(h).contains(s.id)) sol(h).add(s.id);
+                        s.state = S_INSIDE;
+                        s.visible = false;
+                        s.node = h.node;
+                    }
+                } else walkHome(s, false);
+                break;
+            }
+            case A_DEAD:
+                s.timer -= dt;
+                if (s.timer <= 0) settlers.remove(s.id);
+                break;
+            default:
+                walkHome(s, false);
+        }
+    }
+
+    private void attackerWait(Settler s, float dt) {
+        Building t = buildings.get(s.atk);
+        if (t == null || t.player == s.player || (fallen & (1 << t.player)) != 0) {
+            if (t != null && t.player == s.player && isMilitary(t.type) && sol(t).size() < B_CAP[t.type]) joinGarrison(s, t);
+            else goBack(s);
+            return;
+        }
+        if (s.foe != 0) {
+            Settler f = settlers.get(s.foe);
+            if (f != null && f.state != A_DEAD) return;
+            s.foe = 0;
+        }
+        s.timer -= dt;
+        if (s.timer > 0) return;
+        s.timer = 0.4f;
+        // kämpft schon ein Kamerad hier?
+        for (Settler o : settlers.values())
+            if (o != s && o.job == J_SOLDIER && o.atk == t.id && o.player == s.player && o.foe != 0 && o.state != A_DEAD) return;
+        Flag tf = flags.get(t.flag);
+        Settler d = null;
+        if (isHq(t)) {
+            int rk = takeSoldier(t.player, true);
+            if (rk >= 0) {
+                d = spawn(J_SOLDIER, null, t.player);
+                d.rank = rk;
+                d.hp = maxHp(rk);
+            }
+        } else {
+            for (int id : sol(t)) {
+                Settler x = settlers.get(id);
+                if (x != null && x.state == S_INSIDE && x.home == t.id && (d == null || x.rank > d.rank)) d = x;
+            }
+        }
+        if (d != null) {
+            d.home = t.id;
+            d.node = t.node;
+            d.visible = true;
+            d.atk = 0;
+            d.foe = s.id;
+            d.state = A_DEFEND;
+            setPath(d, new int[]{tf.node});
+            s.foe = d.id;
+            return;
+        }
+        // ist noch ein Verteidiger draußen?
+        for (Settler o : settlers.values())
+            if (o.job == J_SOLDIER && o.player == t.player && o.home == t.id && o.atk == 0
+                    && (o.state == A_DEFEND || o.state == A_FIGHT || o.state == A_BACKIN)) return;
+        conquer(t, s);
+    }
+
+    private void duel(Settler s, float dt) {
+        Settler d = settlers.get(s.foe);
+        if (d == null || d.state == A_DEAD) {
+            s.foe = 0;
+            s.state = A_WAIT;
+            s.timer = 0.8f;
+            return;
+        }
+        s.timer -= dt;
+        if (s.timer > 0) return;
+        s.timer = 0.85f;
+        Settler att = s.turn ? d : s, def = s.turn ? s : d;
+        s.turn = !s.turn;
+        att.swingT = time;
+        float chance = Math.max(0.15f, Math.min(0.85f, 0.5f + 0.09f * (att.rank - def.rank)));
+        ev(E_CLASH, s.node);
+        if (rng.nextFloat() < chance) {
+            def.hp--;
+            def.hitT = time;
+            if (def.hp <= 0) {
+                kill(def);
+                if (def == s) return;
+                s.foe = 0;
+                s.state = A_WAIT;
+                s.timer = 1f;
+            }
+        }
+    }
+
+    private void kill(Settler x) {
+        x.state = A_DEAD;
+        x.timer = 3f;
+        x.next = -1;
+        x.path = null;
+        x.foe = 0;
+        x.visible = true;
+        Building h = buildings.get(x.home);
+        if (h != null && h.sol != null) h.sol.remove((Integer) x.id);
+        ev(E_DIE, x.node);
+    }
+
+    private void defenderBack(Settler d) {
+        d.foe = 0;
+        Building h = buildings.get(d.home);
+        if (h == null || h.player != d.player) {
+            walkHome(d, false);
+            return;
+        }
+        d.state = A_BACKIN;
+        if (d.node == h.node) setPath(d, new int[0]);
+        else setPath(d, new int[]{h.node});
+    }
+
+    private void goBack(Settler s) {
+        s.foe = 0;
+        s.atk = 0;
+        Building h = buildings.get(s.home);
+        if (h == null || h.player != s.player) {
+            walkHome(s, false);
+            return;
+        }
+        int[] p = walkPath(s.node, h.node, 50);
+        if (p == null) {
+            walkHome(s, false);
+            return;
+        }
+        s.state = A_HOME;
+        setPath(s, p);
+    }
+
+    private void joinGarrison(Settler s, Building t) {
+        Building oh = buildings.get(s.home);
+        if (oh != null && oh.sol != null) oh.sol.remove((Integer) s.id);
+        s.home = t.id;
+        sol(t).add(s.id);
+        s.atk = 0;
+        s.foe = 0;
+        int[] p = walkPath(s.node, t.node, 8);
+        s.state = A_HOME;
+        setPath(s, p == null ? new int[0] : p);
+    }
+
+    private void conquer(Building t, Settler s) {
+        int old = t.player;
+        if (isHq(t)) {
+            fallen |= 1 << old;
+            if (winner == 0) winner = s.player + 1;
+            if (ruins == null) ruins = new ArrayList<>();
+            ruins.add(new float[]{t.node, time, 3});
+            msg("Das Hauptquartier von " + P_NAMES[old] + " ist gefallen! " + P_NAMES[s.player] + " gewinnt.", t.node, -1);
+            ev(E_FIRE, t.node);
+            ev(E_DONE, -1);
+            goBack(s);
+            return;
+        }
+        Flag tf = flags.get(t.flag);
+        if (tf != null) {
+            for (int d = 0; d < 6; d++) {
+                Road r = roads.get(tf.road[d]);
+                if (r != null) removeRoad(r);
+            }
+            for (Ware w2 : tf.wares) loseWare(w2);
+            tf.wares.clear();
+            tf.player = s.player;
+        }
+        for (int id : new ArrayList<>(sol(t))) {
+            Settler x = settlers.get(id);
+            if (x != null && x.player != s.player && x.state != A_DEAD) walkHome(x, false);
+        }
+        sol(t).clear();
+        java.util.Arrays.fill(t.stock, 0);
+        java.util.Arrays.fill(t.incoming, 0);
+        t.player = s.player;
+        t.occupied = true;
+        t.stopped = false;
+        t.trainT = 0;
+        t.prio = false;
+        Building oh = buildings.get(s.home);
+        if (oh != null && oh.sol != null) oh.sol.remove((Integer) s.id);
+        s.home = t.id;
+        s.atk = 0;
+        s.foe = 0;
+        s.state = S_INSIDE;
+        s.visible = false;
+        s.node = t.node;
+        s.next = -1;
+        sol(t).add(s.id);
+        for (Settler o : new ArrayList<>(settlers.values())) {
+            if (o == s || o.job != J_SOLDIER || o.player != s.player || o.atk != t.id || o.state != A_WAIT) continue;
+            if (sol(t).size() < B_CAP[t.type]) joinGarrison(o, t);
+            else goBack(o);
+        }
+        t.status = "Erobert";
+        msg("Du hast die " + B_NAMES[t.type] + " von " + P_NAMES[old] + " erobert!", t.node, s.player);
+        msg("Deine " + B_NAMES[t.type] + " wurde von " + P_NAMES[s.player] + " erobert!", t.node, old);
+        ev(E_LAND, t.node);
+        recomputeTerritory();
+        enforceBorders();
     }
 
     /** Späher zu einer Fahne schicken: er erkundet von dort aus die Gegend. */
@@ -1791,6 +2356,29 @@ public class World implements Serializable {
                 s.home = b.id;
                 b.builder = s.id;
                 b.status = "Bauarbeiter kommt";
+            } else if (b.done && isMilitary(b.type)) {
+                ArrayList<Integer> sl = sol(b);
+                for (int i = sl.size() - 1; i >= 0; i--) {
+                    Settler x = settlers.get(sl.get(i));
+                    if (x == null || x.player != pl || x.state == A_DEAD) sl.remove(i);
+                }
+                if (sl.size() >= B_CAP[b.type]) continue;
+                int keep = combat() && !sl.isEmpty() ? 2 : 0;
+                if (soldiers(pl) <= keep) {
+                    if (sl.isEmpty()) b.status = "Keine Soldaten frei";
+                    else if (keep > 0) b.status = "Besetzt – 2 Soldaten bleiben als Wache im Hauptquartier";
+                    continue;
+                }
+                int[] p = pathFromHq(b);
+                if (p == null) { b.status = "Kein Weg zum Hauptquartier"; continue; }
+                int rk = takeSoldier(pl, false);
+                Settler s = spawn(J_SOLDIER, p, pl);
+                s.rank = rk;
+                s.hp = maxHp(rk);
+                s.state = S_TO_SITE;
+                s.home = b.id;
+                sl.add(s.id);
+                if (!b.occupied) b.status = "Ein Soldat ist unterwegs";
             } else if (b.done && b.worker < 0) {
                 int job = jobFor(b.type);
                 if (job < 0) continue;
@@ -1934,6 +2522,11 @@ public class World implements Serializable {
             requestT = 0;
             requests();
         }
+        military(dt);
+        if (ai > 0 && players > 1 && (fallen & 2) == 0) {
+            if (brain == null) brain = new Ai(1);
+            brain.tick(this, dt);
+        }
         demandT += dt;
         if (demandT >= 0.5f) {
             demandT = 0;
@@ -2075,8 +2668,12 @@ public class World implements Serializable {
             roamScout(s, dt);
             return;
         }
+        if (s.job == J_SOLDIER && s.state >= A_MARCH) {
+            soldierThink(s, dt);
+            return;
+        }
         Building b = buildings.get(s.home);
-        if (b == null) {
+        if (b == null || b.player != s.player) {
             dismiss(s);
             return;
         }
@@ -2091,11 +2688,14 @@ public class World implements Serializable {
                     s.state = S_INSIDE;
                     s.timer = 2f;
                     if (s.job == J_SOLDIER) {
-                        b.occupied = true;
-                        b.status = "Besetzt – das Land wächst";
-                        recomputeTerritory();
-                        msg(B_NAMES[b.type] + " besetzt – dein Land ist gewachsen", b.node, b.player);
-                        ev(E_LAND, b.node);
+                        if (!b.occupied) {
+                            b.occupied = true;
+                            b.status = "Besetzt – das Land wächst";
+                            recomputeTerritory();
+                            if (combat()) enforceBorders();
+                            msg(B_NAMES[b.type] + " besetzt – dein Land ist gewachsen", b.node, b.player);
+                            ev(E_LAND, b.node);
+                        } else b.status = "Besetzt";
                     } else b.status = "Arbeitet";
                 }
                 break;
@@ -2125,7 +2725,16 @@ public class World implements Serializable {
                 break;
             }
             case S_INSIDE: {
-                if (s.job == J_SOLDIER) break;
+                if (s.job == J_SOLDIER) {
+                    if (s.hp < maxHp(s.rank)) {
+                        s.workPhase += dt;
+                        if (s.workPhase >= 5f) {
+                            s.workPhase = 0;
+                            s.hp++;
+                        }
+                    }
+                    break;
+                }
                 s.timer -= dt;
                 if (s.timer > 0) break;
                 if (b.stopped) {
@@ -2217,12 +2826,13 @@ public class World implements Serializable {
                 if (s.timer > 0.5f) {
                     if (b.type == B_SAW && (int) (ph / 2f) != (int) (s.workPhase / 2f)) ev(E_SAW, b.node);
                     if (isMine(b.type) && (int) (ph / 0.9f) != (int) (s.workPhase / 0.9f)) ev(E_CLINK, b.node);
-                    if (b.type == B_TOOLS && (int) (ph / 0.6f) != (int) (s.workPhase / 0.6f)) ev(E_HAMMER, b.node);
+                    if ((b.type == B_TOOLS || b.type == B_ARMORY) && (int) (ph / 0.6f) != (int) (s.workPhase / 0.6f)) ev(E_HAMMER, b.node);
                     if (b.type == B_PIGS && (int) (ph / 5f) != (int) (s.workPhase / 5f)) ev(E_OINK, b.node);
                 }
                 if (s.timer > 0) break;
                 int out = RECIPE_OUT[b.type];
                 if (out == -2) out = b.making;
+                if (out == -3) out = b.produced % 2 == 0 ? WARE_SWORD : WARE_SHIELD;
                 if (isMine(b.type) && s.target >= 0 && resAmt[s.target] > 0) resAmt[s.target]--;
                 s.target = -1;
                 if (out >= 0) {
@@ -2313,7 +2923,8 @@ public class World implements Serializable {
         s.state = S_SAW;
         s.timer = RECIPE_TIME[b.type] / s.tempo();
         s.workPhase = 0;
-        b.status = b.type == B_TOOLS ? "Macht " + TOOL_ART[b.making - FIRST_TOOL] + " " + WARE_NAMES[b.making] : WORK_TEXT[b.type];
+        b.status = b.type == B_TOOLS ? "Macht " + TOOL_ART[b.making - FIRST_TOOL] + " " + WARE_NAMES[b.making]
+                : b.type == B_ARMORY ? (b.produced % 2 == 0 ? "Schmiedet ein Schwert" : "Schmiedet einen Schild") : WORK_TEXT[b.type];
         b.problem = false;
         if (b.type == B_SAW) ev(E_SAW, b.node);
     }

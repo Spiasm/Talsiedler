@@ -50,3 +50,9 @@ Ein Aufbauspiel für Android-Tablets im Stil der alten Siedler-Klassiker – mit
 - Angreifen: gegnerisches Wachgebäude antippen, Anzahl wählen; Zweikämpfe an der Fahne, erobertes Gebäude wechselt den Besitzer, Gegnerisches auf neuem Land brennt ab
 - Wer das Hauptquartier des anderen erobert, gewinnt
 - Neues Spiel: allein oder gegen den Computer (leicht, mittel, schwer); 2 Spieler über Bluetooth zusätzlich als „Kampf“
+
+## Update 8
+- Beenden-Knopf im Menü (speichert und schließt)
+- Kartengrößen 72, 128, 192, 256 (Gelände wird in Kacheln gezeichnet)
+- Kartentypen: Allgäu, Alpen, Nordsee (Inseln mit Sandbänken), Sahara (Wüste mit Oasen und Palmen), Dolomiten, Ätna (Lava), Zufall
+- Fischerboote: Sägewerk baut ein Boot (statt 2 Brettern), es bleibt in seinem Gewässer; Fischer rudert hinaus, Netz bringt 2 Fische

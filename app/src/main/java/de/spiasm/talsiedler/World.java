@@ -18,21 +18,48 @@ import java.util.Random;
 public class World implements Serializable {
     private static final long serialVersionUID = 1L;
 
-    public static final int W = 72, H = 72, N = W * H;
+    /** Kartengröße – gilt für die gerade aktive Welt (wird beim Erzeugen und Laden gesetzt) */
+    public static int W = 72, H = 72, N = W * H;
+    public static final int[] MAP_SIZES = {72, 128, 192, 256};
+    public static final String[] SIZE_NAMES = {"Klein", "Mittel", "Groß", "Riesig"};
+    public static final int MT_RANDOM = 0, MT_ALLGAEU = 1, MT_ALPS = 2, MT_NORTHSEA = 3, MT_SAHARA = 4, MT_DOLOMITES = 5, MT_ETNA = 6;
+    public static final String[] MAP_NAMES = {"Zufall", "Allgäu", "Alpen", "Nordsee", "Sahara", "Dolomiten", "Ätna"};
+    public static final String[] MAP_INFO = {
+            "Gemischt, wie bisher.",
+            "Flachland: viel Wiese und Wald, kaum Berge – gut zum Lernen.",
+            "Gebirge: große Bergketten voller Bodenschätze, wenig Bauplatz in den Tälern.",
+            "Inseln: viel Wasser und Fisch, die Inseln sind mit Sandbänken verbunden.",
+            "Wüste: viel Sand (dort nur Wege und Fahnen), gebaut wird in den grünen Oasen.",
+            "Felsig: viele Steine und Felsen, Holz ist knapp.",
+            "Vulkan: glühende Lava (nicht betretbar), dafür viel Kohle und Gold."};
 
-    public static final byte T_WATER = 0, T_GRASS = 1, T_MOUNTAIN = 2, T_SAND = 3;
+    public static void setSize(int w, int h) {
+        W = w;
+        H = h;
+        N = w * h;
+    }
+
+    private static int prep(int size) {
+        setSize(size, size);
+        return size;
+    }
+
+    /** Kartengröße und -typ dieser Welt */
+    public int mapW, mapH, mapType;
+
+    public static final byte T_WATER = 0, T_GRASS = 1, T_MOUNTAIN = 2, T_SAND = 3, T_LAVA = 4;
     public static final byte O_NONE = 0, O_TREE = 1, O_STONE = 2, O_BUILDING = 3, O_FLAG = 4, O_BLOCK = 5, O_FIELD = 6;
 
     public static final int WARE_LOG = 0, WARE_BOARD = 1, WARE_STONE = 2, WARE_FISH = 3, WARE_MEAT = 4, WARE_BREAD = 5,
             WARE_GRAIN = 6, WARE_FLOUR = 7, WARE_WATER = 8, WARE_PIG = 9, WARE_COAL = 10, WARE_IRONORE = 11, WARE_GOLD = 12,
             WARE_IRON = 13, T_AXE = 14, T_SAW = 15, T_PICK = 16, T_HAMMER = 17, T_SHOVEL = 18, T_ROD = 19, T_SCYTHE = 20,
-            T_BOW = 21, T_CLEAVER = 22, T_ROLLER = 23, WARE_SWORD = 24, WARE_SHIELD = 25, NWARES = 26, FIRST_TOOL = 14, NTOOLS = 10;
+            T_BOW = 21, T_CLEAVER = 22, T_ROLLER = 23, WARE_SWORD = 24, WARE_SHIELD = 25, WARE_BOAT = 26, NWARES = 27, FIRST_TOOL = 14, NTOOLS = 10;
     public static final String[] WARE_NAMES = {"Baumstamm", "Brett", "Stein", "Fisch", "Fleisch", "Brot", "Getreide", "Mehl",
             "Wasser", "Schwein", "Kohle", "Eisenerz", "Gold", "Eisen", "Axt", "Säge", "Spitzhacke", "Hammer", "Schaufel", "Angel",
-            "Sense", "Bogen", "Beil", "Nudelholz", "Schwert", "Schild"};
+            "Sense", "Bogen", "Beil", "Nudelholz", "Schwert", "Schild", "Boot"};
     public static final String[] WARE_PLURAL = {"Baumstämme", "Bretter", "Steine", "Fische", "Fleisch", "Brote", "Getreide", "Mehl",
             "Wasser", "Schweine", "Kohle", "Eisenerz", "Gold", "Eisen", "Äxte", "Sägen", "Spitzhacken", "Hämmer", "Schaufeln", "Angeln",
-            "Sensen", "Bögen", "Beile", "Nudelhölzer", "Schwerter", "Schilde"};
+            "Sensen", "Bögen", "Beile", "Nudelhölzer", "Schwerter", "Schilde", "Boote"};
     /** Bodenschätze: 1 Kohle, 2 Eisen, 3 Gold, 4 Granit */
     public static final String[] RES_NAMES = {"", "Kohle", "Eisenerz", "Gold", "Granit"};
 
@@ -111,7 +138,7 @@ public class World implements Serializable {
 
     // Siedler-Zustände
     static final int S_TO_SITE = 1, S_INSIDE = 2, S_OUT_GO = 3, S_WORK = 4, S_OUT_BACK = 5, S_DELIVER = 6,
-            S_BUILD = 7, S_RETURN = 8, S_SAW = 9;
+            S_BUILD = 7, S_RETURN = 8, S_SAW = 9, S_BOAT_OUT = 10, S_BOAT_BACK = 11;
     // Soldaten im Kampf
     public static final int A_MARCH = 30, A_WAIT = 31, A_DEFEND = 32, A_FIGHT = 33, A_BACKIN = 34, A_HOME = 35, A_DEAD = 36;
     public static final String[] RANK_NAMES = {"Gefreiter", "Obergefreiter", "Feldwebel", "Offizier", "General"};
@@ -163,6 +190,14 @@ public class World implements Serializable {
         public boolean reserved;
     }
 
+    /** Fischerboot: bleibt für immer in seinem Gewässer */
+    public static class Boat implements Serializable {
+        private static final long serialVersionUID = 1L;
+        public int id, node, dock, player, lake;
+        /** Fischer, der gerade damit fährt (0 = frei) */
+        public int user;
+    }
+
     public static class Msg implements Serializable {
         private static final long serialVersionUID = 1L;
         public String text;
@@ -191,6 +226,8 @@ public class World implements Serializable {
         public float util;
         /** Soldaten, die hierher gehören (Ids) */
         public ArrayList<Integer> sol;
+        /** Fischer: Gewässer + 1 (0 = noch nicht bestimmt, -1 = keins) */
+        int lakeP1;
         float trainT;
         int noticed;
         float noticeT;
@@ -241,6 +278,9 @@ public class World implements Serializable {
         public int rank, hp, foe, atk;
         boolean turn;
         public float swingT, hitT;
+        /** Fischer: Boot-Id (0 = keins), sitzt im Boot, Zusatzfang */
+        public int boat, bonus;
+        public boolean inBoat;
         /** Fischer: Wasserfeld, Jäger: Tier, Bauer: 1 = ernten */
         int aux;
 
@@ -308,6 +348,8 @@ public class World implements Serializable {
     public byte[] sign;
     public float[] signT;
     public ArrayList<Animal> animals;
+    public ArrayList<Boat> boats;
+    private transient int[] lakeId;
     /** ausgebildete Arbeiter, die gerade im Hauptquartier warten (je Beruf) */
     public int[] profs0, profs1;
     /** Werkzeug-Vorrang 0..10 */
@@ -396,6 +438,17 @@ public class World implements Serializable {
     }
 
     public World(long seed, int players, int mode) {
+        this(seed, players, mode, MT_RANDOM, 72);
+    }
+
+    public World(long seed, int players, int mode, int type, int size) {
+        this(prep(size), type, seed, players, mode);
+    }
+
+    private World(int size, int type, long seed, int players, int mode) {
+        this.mapW = size;
+        this.mapH = size;
+        this.mapType = type;
         this.seed = seed;
         this.players = players;
         this.mode = mode;
@@ -581,6 +634,7 @@ public class World implements Serializable {
         for (Flag f : flags.values()) h = h * 31 + f.id + f.wares.size();
         for (int n = 0; n < N; n += 7) h = h * 31 + obj[n] * 3 + objVal[n];
         if (animals != null) for (Animal a : animals) h = h * 31 + a.id + a.node * 5 + (a.next + 1);
+        if (boats != null) for (Boat bt : boats) h = h * 31 + bt.id + bt.node * 3 + bt.user;
         return h;
     }
 
@@ -610,10 +664,22 @@ public class World implements Serializable {
     }
 
     private void generate() {
+        int t = mapType;
+        float water = 0.3f, mount = 0.64f, forestThr = 0.58f, forestDens = 0.75f, rockThr = 0.66f, rockP = 0.5f, center = 0.48f;
+        switch (t) {
+            case MT_ALLGAEU: water = 0.25f; mount = 0.76f; forestThr = 0.55f; rockThr = 0.7f; break;
+            case MT_ALPS: water = 0.27f; mount = 0.53f; forestThr = 0.56f; rockThr = 0.64f; center = 0.44f; break;
+            case MT_NORTHSEA: water = 0.53f; mount = 0.74f; forestThr = 0.6f; center = 0.62f; break;
+            case MT_SAHARA: water = 0.22f; mount = 0.7f; forestThr = 0.56f; rockThr = 0.64f; break;
+            case MT_DOLOMITES: water = 0.27f; mount = 0.6f; forestThr = 0.66f; forestDens = 0.55f; rockThr = 0.55f; rockP = 0.65f; break;
+            case MT_ETNA: water = 0.25f; mount = 0.58f; forestThr = 0.6f; break;
+        }
         float[] land = fbm(rng), forest = fbm(rng), rocks = fbm(rng), bumps = noiseGrid(4, rng);
+        float[] extra = t == MT_SAHARA || t == MT_ETNA ? fbm(rng) : null;
         int cy = H / 2;
         if ((cy & 1) == 1) cy++;
-        int[] centers = players > 1 ? new int[]{cy * W + 17, cy * W + W - 18} : new int[]{cy * W + W / 2};
+        int off = Math.max(17, W / 4);
+        int[] centers = players > 1 ? new int[]{cy * W + off, cy * W + W - 1 - off} : new int[]{cy * W + W / 2};
         for (int n = 0; n < N; n++) {
             int x = n % W, y = n / W;
             float v = land[n];
@@ -622,20 +688,22 @@ public class World implements Serializable {
             if (edge < 4) v -= (4 - edge) * 0.12f;
             int dc = 999;
             for (int c : centers) dc = Math.min(dc, dist(n, c));
-            if (dc < 12) v = v * (dc / 12f) + 0.48f * (1 - dc / 12f);
+            if (dc < 12) v = v * (dc / 12f) + center * (1 - dc / 12f);
             // zwei Spieler: immer ein Landweg zwischen den Hauptquartieren
-            if (players > 1 && Math.abs(y - cy) <= 2 && x >= 17 && x <= W - 18) v = Math.max(0.4f, Math.min(0.6f, v));
-            if (v < 0.3f) {
+            if (players > 1 && Math.abs(y - cy) <= 2 && x >= off && x <= W - 1 - off)
+                v = Math.max(water + 0.1f, Math.min(mount - 0.04f, v));
+            if (v < water) {
                 terrain[n] = T_WATER;
                 height[n] = 0;
-            } else if (v > 0.64f) {
+            } else if (v > mount) {
                 terrain[n] = T_MOUNTAIN;
-                height[n] = (byte) Math.min(9, 3 + (int) ((v - 0.64f) * 40));
+                height[n] = (byte) Math.min(9, 3 + (int) ((v - mount) * 40));
             } else {
                 terrain[n] = T_GRASS;
                 height[n] = (byte) (1 + (int) (bumps[n] * 2.6f));
             }
         }
+        if (t == MT_NORTHSEA) connectIslands(centers);
         // Sand am Ufer
         for (int n = 0; n < N; n++) {
             if (terrain[n] != T_GRASS) continue;
@@ -648,9 +716,38 @@ public class World implements Serializable {
                 }
             }
         }
+        if (t == MT_SAHARA) {
+            // Wüste: alles Gras wird Sand, außer in Oasen und rund um den Start
+            for (int n = 0; n < N; n++) {
+                if (terrain[n] != T_GRASS) continue;
+                int dc = 999;
+                for (int c : centers) dc = Math.min(dc, dist(n, c));
+                boolean nearWater = false;
+                for (int d = 0; d < 6 && !nearWater; d++) {
+                    int m = nb(n, d);
+                    if (m >= 0 && (terrain[m] == T_WATER || terrain[m] == T_SAND && extra[m] > 0.6f)) nearWater = true;
+                }
+                if (dc > 9 && extra[n] < 0.62f && !nearWater) {
+                    terrain[n] = T_SAND;
+                    height[n] = (byte) (1 + (int) (bumps[n] * 2f));
+                }
+            }
+        }
+        if (t == MT_ETNA) {
+            for (int n = 0; n < N; n++) {
+                int dc = 999;
+                for (int c : centers) dc = Math.min(dc, dist(n, c));
+                if (dc < 13) continue;
+                if (terrain[n] == T_MOUNTAIN && extra[n] > 0.6f && height[n] >= 4) terrain[n] = T_LAVA;
+                else if (terrain[n] == T_GRASS && extra[n] > 0.7f && rocks[n] > 0.45f) {
+                    terrain[n] = T_LAVA;
+                    height[n] = 1;
+                }
+            }
+        }
         // Startgebiet ebnen
-        for (int center : centers)
-            for (int m : around(center, 4)) {
+        for (int c0 : centers)
+            for (int m : around(c0, 4)) {
                 terrain[m] = T_GRASS;
                 height[m] = 2;
             }
@@ -658,14 +755,17 @@ public class World implements Serializable {
             int dc = 999;
             for (int c : centers) dc = Math.min(dc, dist(n, c));
             if (terrain[n] == T_GRASS && dc > 3) {
-                float dens = dc < 10 ? 0.35f : 0.75f;
-                if (forest[n] > 0.58f && rng.nextFloat() < dens) {
+                float dens = dc < 10 ? 0.35f : forestDens;
+                if (forest[n] > forestThr && rng.nextFloat() < dens) {
                     obj[n] = O_TREE;
                     objVal[n] = (byte) (rng.nextFloat() < 0.85f ? 3 : rng.nextInt(3));
-                } else if (rocks[n] > 0.66f && rng.nextFloat() < 0.5f) {
+                } else if (rocks[n] > rockThr && rng.nextFloat() < rockP) {
                     obj[n] = O_STONE;
                     objVal[n] = (byte) (3 + rng.nextInt(4));
                 }
+            } else if (t == MT_SAHARA && terrain[n] == T_SAND && dc > 6 && rocks[n] > 0.72f && rng.nextFloat() < 0.3f) {
+                obj[n] = O_STONE;
+                objVal[n] = (byte) (2 + rng.nextInt(3));
             }
         }
         res = new byte[N];
@@ -674,6 +774,7 @@ public class World implements Serializable {
         sign = new byte[N];
         signT = new float[N];
         animals = new ArrayList<>();
+        boats = new ArrayList<>();
         profs0 = new int[NJ];
         profs1 = new int[NJ];
         toolPrio0 = defaultPrio();
@@ -684,9 +785,89 @@ public class World implements Serializable {
         genResources(rng);
         genFish();
         for (int pl = 0; pl < centers.length; pl++) startArea(centers[pl], pl);
-        for (int i = 0; i < 40; i++) spawnAnimal(centers);
+        int na = animalCap(40);
+        for (int i = 0; i < na; i++) spawnAnimal(centers);
         toolsGiven = true;
         recomputeTerritory();
+    }
+
+    /** Tierzahl passend zur Kartengröße und -art */
+    int animalCap(int base) {
+        float f = N / 5184f;
+        if (mapType == MT_SAHARA) f *= 0.5f;
+        if (mapType == MT_NORTHSEA) f *= 0.7f;
+        return Math.max(8, Math.min(400, (int) (base * f)));
+    }
+
+    /** Nordsee: Inseln mit Sandbänken an das Land der Hauptquartiere anbinden */
+    private void connectIslands(int[] centers) {
+        int[] comp = new int[N];
+        java.util.Arrays.fill(comp, -1);
+        ArrayList<Integer> size = new ArrayList<>();
+        ArrayDeque<Integer> q = new ArrayDeque<>();
+        for (int n = 0; n < N; n++) {
+            if (terrain[n] == T_WATER || comp[n] >= 0) continue;
+            int id = size.size(), cnt = 0;
+            comp[n] = id;
+            q.add(n);
+            while (!q.isEmpty()) {
+                int c = q.poll();
+                cnt++;
+                for (int d = 0; d < 6; d++) {
+                    int m = nb(c, d);
+                    if (m >= 0 && comp[m] < 0 && terrain[m] != T_WATER) {
+                        comp[m] = id;
+                        q.add(m);
+                    }
+                }
+            }
+            size.add(cnt);
+        }
+        boolean[] joined = new boolean[size.size()];
+        for (int c : centers) if (comp[c] >= 0) joined[comp[c]] = true;
+        int[] prev = new int[N];
+        for (int iter = 0; iter < 400; iter++) {
+            java.util.Arrays.fill(prev, -2);
+            q.clear();
+            for (int n = 0; n < N; n++)
+                if (comp[n] >= 0 && joined[comp[n]]) {
+                    prev[n] = -1;
+                    q.add(n);
+                }
+            int hit = -1, from = -1;
+            while (!q.isEmpty() && hit < 0) {
+                int c = q.poll();
+                for (int d = 0; d < 6; d++) {
+                    int m = nb(c, d);
+                    if (m < 0 || prev[m] != -2) continue;
+                    if (terrain[m] != T_WATER) {
+                        if (comp[m] >= 0 && !joined[comp[m]] && size.get(comp[m]) >= 15 && terrain[c] == T_WATER) {
+                            hit = m;
+                            from = c;
+                            break;
+                        }
+                        continue;
+                    }
+                    int x = m % W, y = m / W;
+                    if (x < 3 || y < 3 || x > W - 4 || y > H - 4) continue;
+                    prev[m] = c;
+                    q.add(m);
+                }
+            }
+            if (hit < 0) break;
+            joined[comp[hit]] = true;
+            for (int c = from; c >= 0 && terrain[c] == T_WATER; c = prev[c]) {
+                terrain[c] = T_SAND;
+                height[c] = 1;
+                int side = nb(c, 1);
+                if (side >= 0 && terrain[side] == T_WATER && (iter & 1) == 0) {
+                    terrain[side] = T_SAND;
+                    height[side] = 1;
+                }
+            }
+            // die neue Insel gehört jetzt dazu
+            for (int n = 0; n < N; n++) if (terrain[n] != T_WATER && comp[n] < 0) comp[n] = comp[hit];
+        }
     }
 
     static int[] defaultPrio() {
@@ -736,7 +917,8 @@ public class World implements Serializable {
         float[] a = noiseGrid(5, r), b = noiseGrid(5, r), c = noiseGrid(4, r), d = noiseGrid(6, r);
         for (int n = 0; n < N; n++) {
             if (terrain[n] != T_MOUNTAIN) continue;
-            float coal = a[n] * 1.0f, iron = b[n] * 0.92f, gold = c[n] * 0.62f, gran = d[n] * 0.8f;
+            float coal = a[n] * 1.0f, iron = b[n] * 0.92f, gold = c[n] * (mapType == MT_ETNA ? 0.85f : 0.62f), gran = d[n] * 0.8f;
+            if (mapType == MT_ETNA) coal *= 1.12f;
             float max = Math.max(Math.max(coal, iron), Math.max(gold, gran));
             int t = max == coal ? 1 : max == iron ? 2 : max == gold ? 3 : 4;
             if (max < 0.35f) t = r.nextFloat() < 0.5f ? 4 : 0;
@@ -933,7 +1115,7 @@ public class World implements Serializable {
     }
 
     boolean passableTerrain(int n) {
-        return terrain[n] != T_WATER;
+        return terrain[n] != T_WATER && terrain[n] != T_LAVA;
     }
 
     private boolean neighbourFlag(int n) {
@@ -1063,17 +1245,19 @@ public class World implements Serializable {
         if (tf0 != null && tf0.player != pl) return null;
         boolean ok = tf0 != null || canFlag(target, pl);
         if (!ok) return null;
-        int[] prev = new int[N];
-        java.util.Arrays.fill(prev, -2);
+        int[] prev = bfsBegin();
+        int[] mk = bfMark;
+        int gen = bfGen;
         ArrayDeque<Integer> q = new ArrayDeque<>();
         q.add(f.node);
         prev[f.node] = -1;
+        mk[f.node] = gen;
         boolean found = false;
         while (!q.isEmpty() && !found) {
             int c = q.poll();
             for (int d = 0; d < 6; d++) {
                 int m = nb(c, d);
-                if (m < 0 || prev[m] != -2) continue;
+                if (m < 0 || mk[m] == gen) continue;
                 if (c == f.node && f.road[d] != -1) continue;
                 if (m == target) {
                     if (obj[m] == O_FLAG) {
@@ -1081,12 +1265,14 @@ public class World implements Serializable {
                         if (tf.road[(d + 3) % 6] != -1) continue;
                     }
                     prev[m] = c;
+                    mk[m] = gen;
                     found = true;
                     break;
                 }
                 if (!own(m, pl) || !passableTerrain(m) || obj[m] != O_NONE || roadDirs[m] != 0) continue;
                 if (dist(m, f.node) > 30) continue;
                 prev[m] = c;
+                mk[m] = gen;
                 q.add(m);
             }
         }
@@ -1268,6 +1454,7 @@ public class World implements Serializable {
 
     /** Siedler läuft quer übers Land zurück ins Hauptquartier (arbeitslos: weinend). */
     void walkHome(Settler s, boolean sad) {
+        releaseBoat(s);
         Building h = hqB(s.player);
         if (s.walking()) s.node = s.next;
         s.next = -1;
@@ -1442,6 +1629,11 @@ public class World implements Serializable {
 
     /** Nach dem Laden eines älteren Spielstands fehlende Teile ergänzen. */
     public void fixup() {
+        if (mapW <= 0 || mapH <= 0 || mapW * mapH != terrain.length) {
+            mapW = mapH = (int) Math.round(Math.sqrt(terrain.length));
+        }
+        setSize(mapW, mapH);
+        if (boats == null) boats = new ArrayList<>();
         if (msgs == null) msgs = new ArrayList<>();
         if (falls == null) falls = new ArrayList<>();
         if (stats == null) stats = new ArrayList<>();
@@ -1622,24 +1814,73 @@ public class World implements Serializable {
         return o;
     }
 
-    /** Freies Laufen (z.B. Holzfäller zum Baum). Pfad ohne Startknoten. */
-    int[] walkPath(int from, int to, int maxR) {
+    private transient int[] bfPrev, bfMark;
+    private transient int bfGen;
+
+    /** Wiederverwendbarer Speicher für Wegsuchen (spart Speicher auf großen Karten) */
+    private int[] bfsBegin() {
+        if (bfPrev == null || bfPrev.length != N) {
+            bfPrev = new int[N];
+            bfMark = new int[N];
+            bfGen = 0;
+        }
+        bfGen++;
+        if (bfGen == Integer.MAX_VALUE) {
+            java.util.Arrays.fill(bfMark, 0);
+            bfGen = 1;
+        }
+        return bfPrev;
+    }
+
+    /** Weg nur über Wasser (für Boote). Pfad ohne Startknoten. */
+    int[] waterPath(int from, int to, int maxR) {
         if (from == to) return new int[0];
-        int[] prev = new int[N];
-        java.util.Arrays.fill(prev, -2);
+        int[] prev = bfsBegin();
+        int[] mk = bfMark;
+        int gen = bfGen;
         ArrayDeque<Integer> q = new ArrayDeque<>();
         q.add(from);
         prev[from] = -1;
+        mk[from] = gen;
         while (!q.isEmpty()) {
             int c = q.poll();
             for (int d = 0; d < 6; d++) {
                 int m = nb(c, d);
-                if (m < 0 || prev[m] != -2) continue;
+                if (m < 0 || mk[m] == gen || terrain[m] != T_WATER || dist(m, from) > maxR) continue;
+                prev[m] = c;
+                mk[m] = gen;
+                if (m == to) {
+                    ArrayList<Integer> p = new ArrayList<>();
+                    for (int k = to; k != from; k = prev[k]) p.add(0, k);
+                    return toArr(p);
+                }
+                q.add(m);
+            }
+        }
+        return null;
+    }
+
+    /** Freies Laufen (z.B. Holzfäller zum Baum). Pfad ohne Startknoten. */
+    int[] walkPath(int from, int to, int maxR) {
+        if (from == to) return new int[0];
+        int[] prev = bfsBegin();
+        int[] mk = bfMark;
+        int gen = bfGen;
+        ArrayDeque<Integer> q = new ArrayDeque<>();
+        q.add(from);
+        prev[from] = -1;
+        mk[from] = gen;
+        while (!q.isEmpty()) {
+            int c = q.poll();
+            for (int d = 0; d < 6; d++) {
+                int m = nb(c, d);
+                if (m < 0 || mk[m] == gen) continue;
                 if (m != to) {
                     if (!passableTerrain(m) || obj[m] == O_BUILDING || obj[m] == O_BLOCK) continue;
                     if (dist(m, from) > maxR) continue;
                 }
                 prev[m] = c;
+                mk[m] = gen;
                 if (m == to) {
                     ArrayList<Integer> p = new ArrayList<>();
                     for (int k = to; k != from; k = prev[k]) p.add(0, k);
@@ -1670,6 +1911,7 @@ public class World implements Serializable {
             }
             return trainable ? Math.max(0, 2 - b.stock[t] - b.incoming[t]) : 0;
         }
+        if (t == WARE_BOAT) return b.type == B_FISH && wantsBoat(b) ? 1 : 0;
         int[] in = RECIPE_IN[b.type];
         if (in.length == 0) return 0;
         if (isMine(b.type)) {
@@ -1871,6 +2113,208 @@ public class World implements Serializable {
         s.probes = 0;
         s.found = 0;
         return true;
+    }
+
+    // ---------------- Boote ----------------
+
+    /** Nummer des Gewässers an diesem Knoten (-1 = kein Wasser) */
+    public int lakeOf(int n) {
+        if (n < 0 || n >= N || terrain[n] != T_WATER) return -1;
+        if (lakeId == null || lakeId.length != N) {
+            lakeId = new int[N];
+            java.util.Arrays.fill(lakeId, -1);
+            int id = 0;
+            ArrayDeque<Integer> q = new ArrayDeque<>();
+            for (int k = 0; k < N; k++) {
+                if (terrain[k] != T_WATER || lakeId[k] >= 0) continue;
+                lakeId[k] = id;
+                q.add(k);
+                while (!q.isEmpty()) {
+                    int c = q.poll();
+                    for (int d = 0; d < 6; d++) {
+                        int m = nb(c, d);
+                        if (m >= 0 && lakeId[m] < 0 && terrain[m] == T_WATER) {
+                            lakeId[m] = id;
+                            q.add(m);
+                        }
+                    }
+                }
+                id++;
+            }
+        }
+        return lakeId[n];
+    }
+
+    /** Gewässer, an dem ein Fischer arbeitet (-1 = keins) */
+    public int hutLake(Building b) {
+        if (b.lakeP1 == 0) {
+            int best = -1, bd = 999;
+            for (int m : around(b.node, B_WORK_RADIUS[B_FISH])) {
+                if (terrain[m] != T_WATER) continue;
+                int d = dist(m, b.node);
+                if (d < bd) {
+                    bd = d;
+                    best = m;
+                }
+            }
+            b.lakeP1 = best < 0 ? -1 : lakeOf(best) + 1;
+        }
+        return b.lakeP1 <= 0 ? -1 : b.lakeP1 - 1;
+    }
+
+    public Boat boatOn(int pl, int lake, boolean freeOnly) {
+        if (boats == null || lake < 0) return null;
+        for (Boat bt : boats) if (bt.player == pl && bt.lake == lake && (!freeOnly || bt.user == 0)) return bt;
+        return null;
+    }
+
+    Boat boatById(int id) {
+        if (boats == null) return null;
+        for (Boat bt : boats) if (bt.id == id) return bt;
+        return null;
+    }
+
+    /** Braucht dieses Fischerhaus ein Boot? (eins je Gewässer, das Haus mit der kleinsten Nummer bestellt) */
+    boolean wantsBoat(Building b) {
+        if (b.type != B_FISH || !b.done || b.stopped) return false;
+        int lake = hutLake(b);
+        if (lake < 0 || boatOn(b.player, lake, false) != null) return false;
+        for (Building h : buildings.values()) {
+            if (h.type != B_FISH || h.player != b.player || !h.done || hutLake(h) != lake) continue;
+            if (h.stock.length > WARE_BOAT && h.stock[WARE_BOAT] + h.incoming[WARE_BOAT] > 0) return false;
+            if (h.id < b.id && !h.stopped) return false;
+        }
+        return true;
+    }
+
+    int boatsWanted(int pl) {
+        int n = 0;
+        for (Building b : buildings.values()) if (b.player == pl && b.type == B_FISH && wantsBoat(b)) n++;
+        return n;
+    }
+
+    int boatsMaking(int pl) {
+        int n = 0;
+        for (Building b : buildings.values()) if (b.player == pl && b.type == B_SAW && b.making == WARE_BOAT) n++;
+        return n;
+    }
+
+    /** Angekommenes Boot ins Wasser lassen */
+    private void launchBoat(Building b) {
+        int lake = hutLake(b);
+        if (lake < 0) return;
+        int best = -1, bd = 999;
+        for (int m : around(b.node, B_WORK_RADIUS[B_FISH] + 1)) {
+            if (lakeOf(m) != lake) continue;
+            boolean shore = false;
+            for (int d = 0; d < 6; d++) {
+                int k = nb(m, d);
+                if (k >= 0 && passableTerrain(k) && obj[k] != O_BUILDING && obj[k] != O_BLOCK) shore = true;
+            }
+            int dd = dist(m, b.node);
+            if (shore && dd < bd) {
+                bd = dd;
+                best = m;
+            }
+        }
+        if (best < 0) return;
+        Boat bt = new Boat();
+        bt.id = newId();
+        bt.node = bt.dock = best;
+        bt.player = b.player;
+        bt.lake = lake;
+        boats.add(bt);
+        b.stock[WARE_BOAT]--;
+        msg("Fischer: Das Boot liegt im Wasser – jetzt kann er auch weiter draußen fischen", b.node, b.player);
+        ev(E_SPLASH, best);
+    }
+
+    /** Fischfang mit dem Boot: liefert den Uferpunkt zum Einsteigen */
+    private int boatTarget(Settler s, Building b) {
+        int lake = hutLake(b);
+        Boat bt = boatOn(b.player, lake, true);
+        if (bt == null) return -1;
+        int fishAt = -1, bd = 999;
+        for (int m : around(bt.dock, 11)) {
+            if (lakeOf(m) != lake || fish[m] <= 0 || reserved[m]) continue;
+            int d = dist(m, bt.dock);
+            if (d >= 2 && d < bd) {
+                bd = d;
+                fishAt = m;
+            }
+        }
+        if (fishAt < 0) return -1;
+        int shore = -1;
+        for (int d = 0; d < 6; d++) {
+            int k = nb(bt.dock, d);
+            if (k >= 0 && passableTerrain(k) && obj[k] != O_BUILDING && obj[k] != O_BLOCK && obj[k] != O_FLAG) {
+                shore = k;
+                break;
+            }
+        }
+        if (shore < 0) return -1;
+        s.aux = fishAt;
+        s.boat = bt.id;
+        bt.user = s.id;
+        return shore;
+    }
+
+    private void boardBoat(Settler s, Building b, Flag bf) {
+        Boat bt = boatById(s.boat);
+        if (bt == null) {
+            s.boat = 0;
+            disembark(s, b, bf);
+            return;
+        }
+        int[] p = waterPath(bt.dock, s.aux, 16);
+        if (p == null) {
+            disembark(s, b, bf);
+            return;
+        }
+        s.inBoat = true;
+        s.node = bt.dock;
+        setPath(s, p);
+        s.state = S_BOAT_OUT;
+        b.status = "Rudert hinaus";
+        ev(E_SPLASH, bt.dock);
+    }
+
+    private void disembark(Settler s, Building b, Flag bf) {
+        int shore = s.target;
+        releaseBoat(s);
+        if (shore < 0 || !passableTerrain(shore)) {
+            shore = bf.node;
+        } else reserved[shore] = false;
+        s.node = shore;
+        s.target = -1;
+        int[] back = walkPath(shore, bf.node, 24);
+        if (back == null) back = new int[]{bf.node};
+        setPath(s, concat(back, b.node));
+        s.state = S_OUT_BACK;
+        b.status = "Kommt zurück";
+    }
+
+    void releaseBoat(Settler s) {
+        if (s.boat != 0) {
+            Boat bt = boatById(s.boat);
+            if (bt != null) {
+                bt.user = 0;
+                bt.node = bt.dock;
+            }
+        }
+        s.boat = 0;
+        if (s.inBoat) {
+            s.inBoat = false;
+            if (terrain[s.node] == T_WATER) {
+                for (int d = 0; d < 6; d++) {
+                    int k = nb(s.node, d);
+                    if (k >= 0 && passableTerrain(k)) {
+                        s.node = k;
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     // ---------------- Militär ----------------
@@ -2619,8 +3063,10 @@ public class World implements Serializable {
         animalT += dt;
         if (animalT >= 12f) {
             animalT = 0;
-            if (animals.size() < 45) spawnAnimal(null);
-            if (animals.size() < 25) spawnAnimal(null);
+            int cap = animalCap(45);
+            if (animals.size() < cap) spawnAnimal(null);
+            if (animals.size() < cap / 2) spawnAnimal(null);
+            if (animals.size() < cap / 2 && N > 10000) spawnAnimal(null);
         }
         for (Animal a : animals) {
             if (a.next >= 0) {
@@ -2746,6 +3192,7 @@ public class World implements Serializable {
                     startProduce(s, b);
                     break;
                 }
+                if (b.type == B_FISH && b.stock[WARE_BOAT] > 0) launchBoat(b);
                 int tgt = findTarget(s, b);
                 if (tgt == -2) {
                     b.status = "Wartet, bis das Getreide reif ist";
@@ -2770,6 +3217,7 @@ public class World implements Serializable {
                 if (p == null) {
                     if (s.job == J_HUNTER) releaseAnimal(s.aux);
                     else reserved[tgt] = true; // unerreichbar, nicht wieder probieren
+                    releaseBoat(s);
                     s.timer = 1f;
                     break;
                 }
@@ -2784,6 +3232,10 @@ public class World implements Serializable {
                 break;
             }
             case S_OUT_GO:
+                if (s.boat != 0) {
+                    boardBoat(s, b, bf);
+                    break;
+                }
                 s.state = S_WORK;
                 s.timer = workTime(s) / s.tempo();
                 s.workPhase = 0;
@@ -2802,6 +3254,23 @@ public class World implements Serializable {
                 if (s.job == J_HUNTER && ph < 1.3f && s.workPhase >= 1.3f) ev(E_BOW, s.node);
                 if (s.timer > 0) break;
                 finishWork(s, b);
+                if (s.boat != 0) {
+                    // zweiter Fisch aus dem Netz, dann zurückrudern
+                    if (s.aux >= 0 && s.aux < N && fish[s.aux] > 0 && s.carryType == WARE_FISH) {
+                        fish[s.aux]--;
+                        s.bonus = 1;
+                    }
+                    Boat bt = boatById(s.boat);
+                    int[] wp = bt == null ? null : waterPath(s.node, bt.dock, 20);
+                    if (wp == null) {
+                        disembark(s, b, bf);
+                        break;
+                    }
+                    setPath(s, wp);
+                    s.state = S_BOAT_BACK;
+                    b.status = "Rudert zurück";
+                    break;
+                }
                 reserved[s.target] = false;
                 s.target = -1;
                 int[] back = walkPath(s.node, bf.node, 24);
@@ -2811,6 +3280,16 @@ public class World implements Serializable {
                 b.status = "Kommt zurück";
                 break;
             }
+            case S_BOAT_OUT:
+                s.state = S_WORK;
+                s.timer = 10f / s.tempo();
+                s.workPhase = 0;
+                b.status = "Wirft das Netz aus";
+                ev(E_SPLASH, s.node);
+                break;
+            case S_BOAT_BACK:
+                disembark(s, b, bf);
+                break;
             case S_OUT_BACK:
                 s.visible = false;
                 if (s.carryType >= 0) s.state = S_DELIVER;
@@ -2833,6 +3312,10 @@ public class World implements Serializable {
                 int out = RECIPE_OUT[b.type];
                 if (out == -2) out = b.making;
                 if (out == -3) out = b.produced % 2 == 0 ? WARE_SWORD : WARE_SHIELD;
+                if (b.type == B_SAW && b.making == WARE_BOAT) {
+                    out = WARE_BOAT;
+                    b.making = -1;
+                }
                 if (isMine(b.type) && s.target >= 0 && resAmt[s.target] > 0) resAmt[s.target]--;
                 s.target = -1;
                 if (out >= 0) {
@@ -2846,6 +3329,12 @@ public class World implements Serializable {
                     addProduct(bf, s.carryType);
                     b.produced++;
                     s.carryType = -1;
+                    if (s.bonus > 0) {
+                        s.bonus--;
+                        s.carryType = WARE_FISH;
+                        ev(E_DROP, bf.node);
+                        break;
+                    }
                     s.state = S_INSIDE;
                     s.timer = (isProducer(b.type) ? 1f : 5f) / s.tempo();
                     b.status = "Ruht sich aus";
@@ -2918,13 +3407,21 @@ public class World implements Serializable {
                 }
                 b.making = t;
             }
+            if (b.type == B_SAW) {
+                b.making = -1;
+                if (b.stock[WARE_LOG] >= 2 && boatsWanted(b.player) > boatsMaking(b.player)) {
+                    b.making = WARE_BOAT;
+                    b.stock[WARE_LOG]--;
+                }
+            }
             for (int x : RECIPE_IN[b.type]) b.stock[x]--;
         }
         s.state = S_SAW;
-        s.timer = RECIPE_TIME[b.type] / s.tempo();
+        s.timer = (b.type == B_SAW && b.making == WARE_BOAT ? 14f : RECIPE_TIME[b.type]) / s.tempo();
         s.workPhase = 0;
         b.status = b.type == B_TOOLS ? "Macht " + TOOL_ART[b.making - FIRST_TOOL] + " " + WARE_NAMES[b.making]
-                : b.type == B_ARMORY ? (b.produced % 2 == 0 ? "Schmiedet ein Schwert" : "Schmiedet einen Schild") : WORK_TEXT[b.type];
+                : b.type == B_ARMORY ? (b.produced % 2 == 0 ? "Schmiedet ein Schwert" : "Schmiedet einen Schild")
+                : b.type == B_SAW && b.making == WARE_BOAT ? "Baut ein Boot für den Fischer" : WORK_TEXT[b.type];
         b.problem = false;
         if (b.type == B_SAW) ev(E_SAW, b.node);
     }
@@ -3183,6 +3680,7 @@ public class World implements Serializable {
     }
 
     public int treeKindOf(int n) {
+        if (mapType == MT_SAHARA) return 3;
         int h = n * 73856093 ^ (int) seed * 19349663;
         int k = Math.abs(h) % 7;
         return k < 3 ? 0 : k < 6 ? 1 : 2;
@@ -3223,6 +3721,7 @@ public class World implements Serializable {
                         }
                     }
                 }
+                if (best < 0) return boatTarget(s, b);
                 return best;
             }
             case J_SCOUT: {

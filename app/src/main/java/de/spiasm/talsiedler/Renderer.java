@@ -37,9 +37,16 @@ public class Renderer {
     private final Path path = new Path();
     private final RectF rf = new RectF();
     @SuppressWarnings("unchecked")
-    private final ArrayList<World.Settler>[] rows = new ArrayList[World.H + 2];
+    private ArrayList<World.Settler>[] rows = new ArrayList[World.H + 2];
 
     public Renderer() {
+        for (int i = 0; i < rows.length; i++) rows[i] = new ArrayList<>();
+    }
+
+    @SuppressWarnings("unchecked")
+    private void ensureRows() {
+        if (rows.length >= World.H + 2) return;
+        rows = new ArrayList[World.H + 2];
         for (int i = 0; i < rows.length; i++) rows[i] = new ArrayList<>();
     }
 
@@ -113,15 +120,32 @@ public class Renderer {
         return 0xFF000000 | (r << 16) | (g << 8) | bl;
     }
 
-    private int baseColor(World w, int t, int h, Random r) {
-        float v = 0.93f + r.nextFloat() * 0.12f;
+    /** feste Zufallszahl 0..1 je Knoten (gleich in jeder Kachel) */
+    private static float h01(int n, int k) {
+        int h = n * 0x27D4EB2D + k * 0x165667B1;
+        h ^= h >>> 15;
+        h *= 0x85EBCA6B;
+        h ^= h >>> 13;
+        return (h & 0xFFFFFF) / (float) 0x1000000;
+    }
+
+    private int baseColor(World w, int t, int h, int key) {
+        float v = 0.93f + h01(key, 1) * 0.12f;
         switch (t) {
-            case World.T_WATER: return shade(0xFF2F6DA8, 0.95f + r.nextFloat() * 0.08f);
+            case World.T_WATER: return shade(0xFF2F6DA8, 0.95f + h01(key, 2) * 0.08f);
             case World.T_MOUNTAIN:
                 if (h >= 8) return shade(0xFFE8ECEF, v);
-                return shade(mix(0xFF8C7A62, 0xFF9E9488, r.nextFloat()), v);
-            case World.T_SAND: return shade(0xFFD9C48A, v);
-            default: return shade(mix(0xFF6FA845, 0xFF83B34E, r.nextFloat()), v);
+                if (w.mapType == World.MT_ETNA) return shade(mix(0xFF4A3E38, 0xFF6A5A50, h01(key, 3)), v);
+                if (w.mapType == World.MT_DOLOMITES) return shade(mix(0xFFB0A89A, 0xFFC8BFB0, h01(key, 3)), v);
+                return shade(mix(0xFF8C7A62, 0xFF9E9488, h01(key, 3)), v);
+            case World.T_SAND:
+                if (w.mapType == World.MT_SAHARA) return shade(mix(0xFFE3C27A, 0xFFEFD49A, h01(key, 3)), v);
+                return shade(0xFFD9C48A, v);
+            case World.T_LAVA: return shade(mix(0xFFC2361A, 0xFFE8741E, h01(key, 3)), 0.9f + h01(key, 4) * 0.2f);
+            default:
+                if (w.mapType == World.MT_SAHARA) return shade(mix(0xFF7DA845, 0xFF96B850, h01(key, 3)), v);
+                if (w.mapType == World.MT_ETNA) return shade(mix(0xFF6A9A40, 0xFF7E9A48, h01(key, 3)), v);
+                return shade(mix(0xFF6FA845, 0xFF83B34E, h01(key, 3)), v);
         }
     }
 
@@ -132,55 +156,119 @@ public class Renderer {
         return ta;
     }
 
+    // ---------- Gelände in Kacheln ----------
+
+    static final int TILE = 512;
+    private final java.util.LinkedHashMap<Long, Bitmap> tiles = new java.util.LinkedHashMap<>(64, 0.75f, true);
+    private int tileCap = 48, tilesBuilt;
+
+    /** Gelände der neuen Welt: alte Kacheln wegwerfen */
     public void buildTerrain(World w) {
-        int bw = (int) worldW(), bh = (int) worldH();
-        if (terrainBmp == null) terrainBmp = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888);
-        Canvas c = new Canvas(terrainBmp);
-        c.drawColor(0xFF000000);
-        Random r = new Random(w.seed * 31 + 7);
-        Paint tp = new Paint(Paint.ANTI_ALIAS_FLAG);
-        tp.setStrokeWidth(1.2f);
-        for (int y = 0; y < World.H - 1; y++) {
-            for (int x = 0; x < World.W; x++) {
-                int n = y * World.W + x;
-                int e = World.nb(n, 0), se = World.nb(n, 1), sw = World.nb(n, 2);
-                if (se >= 0 && sw >= 0) tri(c, tp, w, n, se, sw, r);
-                if (e >= 0 && se >= 0) tri(c, tp, w, n, e, se, r);
-            }
-        }
-        // Gras-Büschel und Steinchen als Struktur
-        Paint dp = new Paint(Paint.ANTI_ALIAS_FLAG);
-        for (int i = 0; i < World.N * 3; i++) {
-            int n = r.nextInt(World.N);
-            float x = nx(n) + (r.nextFloat() - 0.5f) * TW, y = ny(w, n) + (r.nextFloat() - 0.5f) * RH;
-            int t = w.terrain[n];
-            if (t == World.T_GRASS) {
-                dp.setColor(r.nextBoolean() ? 0x553B6E24 : 0x44A9D46A);
-                c.drawCircle(x, y, 1.2f + r.nextFloat() * 1.3f, dp);
-            } else if (t == World.T_MOUNTAIN) {
-                dp.setColor(r.nextBoolean() ? 0x55584A3A : 0x40FFFFFF);
-                c.drawCircle(x, y, 0.8f + r.nextFloat() * 1.6f, dp);
-            } else if (t == World.T_WATER) {
-                dp.setColor(0x305FA3DE);
-                c.drawRect(x - 4, y, x + 4, y + 1, dp);
-            } else {
-                dp.setColor(0x40A08850);
-                c.drawCircle(x, y, 1f, dp);
-            }
-        }
+        for (Bitmap b : tiles.values()) b.recycle();
+        tiles.clear();
         terrainOf = w;
     }
 
-    private void tri(Canvas c, Paint tp, World w, int a, int b, int d, Random r) {
+    private Bitmap tile(World w, int tx, int ty) {
+        long key = ((long) tx << 32) | (ty & 0xFFFFFFFFL);
+        Bitmap b = tiles.get(key);
+        if (b != null) return b;
+        if (tilesBuilt >= 6) return null;
+        tilesBuilt++;
+        b = Bitmap.createBitmap(TILE + 2, TILE + 2, Bitmap.Config.RGB_565);
+        Canvas c = new Canvas(b);
+        c.drawColor(0xFF000000);
+        c.translate(-tx * TILE + 1, -ty * TILE + 1);
+        float x0 = tx * TILE - 1, y0 = ty * TILE - 1, x1 = x0 + TILE + 2, y1 = y0 + TILE + 2;
+        int ry0 = Math.max(0, (int) ((y0 - MY) / RH) - 2), ry1 = Math.min(World.H - 2, (int) ((y1 - MY + 10 * HS) / RH) + 2);
+        int cx0 = Math.max(0, (int) ((x0 - MX) / TW) - 2), cx1 = Math.min(World.W - 1, (int) ((x1 - MX) / TW) + 2);
+        Paint tp = new Paint(Paint.ANTI_ALIAS_FLAG);
+        tp.setStrokeWidth(1.2f);
+        for (int y = ry0; y <= ry1; y++) {
+            for (int x = cx0; x <= cx1; x++) {
+                int n = y * World.W + x;
+                int e = World.nb(n, 0), se = World.nb(n, 1), sw = World.nb(n, 2);
+                if (se >= 0 && sw >= 0) tri(c, tp, w, n, se, sw, n * 2);
+                if (e >= 0 && se >= 0) tri(c, tp, w, n, e, se, n * 2 + 1);
+            }
+        }
+        // Gras-Büschel, Steinchen, Wellen, Dünen, Lava-Krusten
+        Paint dp = new Paint(Paint.ANTI_ALIAS_FLAG);
+        for (int y = Math.max(0, ry0 - 1); y <= Math.min(World.H - 1, ry1 + 1); y++) {
+            for (int x = cx0; x <= cx1; x++) {
+                int n = y * World.W + x;
+                int t = w.terrain[n];
+                for (int k = 0; k < 3; k++) {
+                    float px = nx(n) + (h01(n, 10 + k) - 0.5f) * TW, py = ny(w, n) + (h01(n, 20 + k) - 0.5f) * RH;
+                    boolean flip = h01(n, 30 + k) < 0.5f;
+                    float sz = h01(n, 40 + k);
+                    if (t == World.T_GRASS) {
+                        dp.setColor(flip ? 0x553B6E24 : 0x44A9D46A);
+                        c.drawCircle(px, py, 1.2f + sz * 1.3f, dp);
+                    } else if (t == World.T_MOUNTAIN) {
+                        dp.setColor(flip ? 0x55584A3A : 0x40FFFFFF);
+                        c.drawCircle(px, py, 0.8f + sz * 1.6f, dp);
+                    } else if (t == World.T_WATER) {
+                        dp.setColor(0x305FA3DE);
+                        c.drawRect(px - 4, py, px + 4, py + 1, dp);
+                    } else if (t == World.T_LAVA) {
+                        dp.setColor(flip ? 0x80301008 : 0x90FFC040);
+                        if (flip) c.drawRect(px - 3 - sz * 2, py - 0.6f, px + 3 + sz * 2, py + 0.6f, dp);
+                        else c.drawCircle(px, py, 0.8f + sz, dp);
+                    } else {
+                        if (w.mapType == World.MT_SAHARA && k == 0) {
+                            // Düne
+                            dp.setColor(0x30A07838);
+                            rf.set(px - 9, py - 1.6f, px + 9, py + 1.6f);
+                            c.drawOval(rf, dp);
+                            dp.setColor(0x40FFF0C8);
+                            rf.set(px - 7, py - 2.4f, px + 5, py - 0.6f);
+                            c.drawOval(rf, dp);
+                        } else {
+                            dp.setColor(0x40A08850);
+                            c.drawCircle(px, py, 1f, dp);
+                        }
+                    }
+                }
+            }
+        }
+        tiles.put(key, b);
+        while (tiles.size() > tileCap) {
+            java.util.Iterator<java.util.Map.Entry<Long, Bitmap>> it = tiles.entrySet().iterator();
+            Bitmap old = it.next().getValue();
+            it.remove();
+            old.recycle();
+        }
+        return b;
+    }
+
+    private void drawTerrain(Canvas c, World w) {
+        int ntx = (int) Math.ceil(worldW() / TILE), nty = (int) Math.ceil(worldH() / TILE);
+        int tx0 = Math.max(0, (int) Math.floor(camX / TILE)), tx1 = Math.min(ntx - 1, (int) Math.floor((camX + viewW / zoom) / TILE));
+        int ty0 = Math.max(0, (int) Math.floor(camY / TILE)), ty1 = Math.min(nty - 1, (int) Math.floor((camY + viewH / zoom) / TILE));
+        tileCap = Math.max(24, (tx1 - tx0 + 2) * (ty1 - ty0 + 2) + 10);
+        tilesBuilt = 0;
+        for (int ty = ty0; ty <= ty1; ty++)
+            for (int tx = tx0; tx <= tx1; tx++) {
+                Bitmap tb = tile(w, tx, ty);
+                if (tb == null) continue;
+                c.save();
+                c.translate(tx * TILE - 1, ty * TILE - 1);
+                c.drawBitmap(tb, 0, 0, bmpPaint);
+                c.restore();
+            }
+    }
+
+    private void tri(Canvas c, Paint tp, World w, int a, int b, int d, int key) {
         int t = triTerrain(w, a, b, d);
         int ha = w.height[a], hb = w.height[b], hd = w.height[d];
-        int col = baseColor(w, t, Math.max(ha, Math.max(hb, hd)), r);
+        int col = baseColor(w, t, Math.max(ha, Math.max(hb, hd)), key);
         // Licht kommt von links oben
         float ax = nx(a), ay = ny(w, a), bx = nx(b), by = ny(w, b), dx = nx(d), dy = ny(w, d);
         float slopeX = ((hb + hd) / 2f - ha) * (bx > ax ? 1 : -1);
         float slopeY = (a / World.W == b / World.W) ? (hd - (ha + hb) / 2f) : ((hb + hd) / 2f - ha);
         float f = 1f + slopeX * 0.07f - slopeY * 0.09f;
-        if (t == World.T_WATER) f = 1f;
+        if (t == World.T_WATER || t == World.T_LAVA) f = 1f;
         f = Math.max(0.55f, Math.min(1.45f, f));
         col = shade(col, f);
         path.reset();
@@ -200,13 +288,14 @@ public class Renderer {
 
     public void draw(Canvas c, World w, float t) {
         if (terrainOf != w) buildTerrain(w);
+        ensureRows();
         if (fogOf != w || fogVer != w.exploredVer || fogMe != me) buildFog(w);
         boolean[] ex = w.exploredOf(me);
         c.drawColor(0xFF000000);
         c.save();
         c.scale(zoom, zoom);
         c.translate(-camX, -camY);
-        c.drawBitmap(terrainBmp, 0, 0, bmpPaint);
+        drawTerrain(c, w);
 
         int y0 = Math.max(0, (int) ((camY - MY) / RH) - 2);
         int y1 = Math.min(World.H - 1, (int) ((camY + viewH / zoom - MY) / RH) + 4);
@@ -261,6 +350,7 @@ public class Renderer {
                 int n = y * World.W + x;
                 if (!ex[n]) continue;
                 float px = nx(n), py = ny(w, n);
+                if (w.terrain[n] == World.T_LAVA) lavaGlow(c, px, py, t, n);
                 switch (w.obj[n]) {
                     case World.O_TREE: {
                         float shake = 0;
@@ -287,6 +377,9 @@ public class Renderer {
                     int ar = Math.max(a.node / World.W, a.next >= 0 ? a.next / World.W : 0);
                     if (ar == y) animal(c, w, a, t);
                 }
+            if (w.boats != null)
+                for (World.Boat bt : w.boats)
+                    if (bt.user == 0 && bt.node / World.W == y && ex[bt.node]) boat(c, nx(bt.node), ny(w, bt.node), 1, t, bt.id, false, false, 0);
             for (World.Settler s : rows[y]) settler(c, w, s, t);
         }
         if (showUtil) {
@@ -358,6 +451,7 @@ public class Renderer {
                 case World.T_WATER: col = 0xFF2F6DA8; break;
                 case World.T_MOUNTAIN: col = w.height[n] >= 8 ? 0xFFE0E4E8 : 0xFF8C7A62; break;
                 case World.T_SAND: col = 0xFFD9C48A; break;
+                case World.T_LAVA: col = 0xFFD8501E; break;
                 default: col = 0xFF6FA845;
             }
             if (w.obj[n] == World.O_TREE) col = 0xFF2F5E25;
@@ -457,6 +551,7 @@ public class Renderer {
     }
 
     private static int treeKind(World w, int n) {
+        if (w.mapType == World.MT_SAHARA) return 3;
         int h = n * 73856093 ^ (int) w.seed * 19349663;
         int k = Math.abs(h) % 7;
         return k < 3 ? 0 : k < 6 ? 1 : 2;
@@ -569,6 +664,41 @@ public class Renderer {
         p.setColor(0x38000000);
         rf.set(x - 7 * s, y - 2 * s, x + 9 * s, y + 2.5f * s);
         c.drawOval(rf, p);
+        if (kind == 3) {
+            // Palme
+            float lean = 2.5f * s;
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeCap(Paint.Cap.ROUND);
+            p.setStrokeWidth(2.2f * s);
+            p.setColor(0xFF8A6A42);
+            path.reset();
+            path.moveTo(x, y);
+            path.quadTo(x + lean * 0.2f, y - 10 * s, x + lean + sway, y - 19 * s);
+            c.drawPath(path, p);
+            p.setStrokeWidth(0.5f * s);
+            p.setColor(0xFF6A4E2E);
+            for (int i = 1; i < 6; i++) {
+                float f = i / 6f, bx = x + lean * f * f + sway * f, by = y - 19 * s * f;
+                c.drawLine(bx - 1.1f * s, by, bx + 1.1f * s, by - 0.4f * s, p);
+            }
+            float tx = x + lean + sway, ty = y - 19 * s;
+            p.setStrokeWidth(1.6f * s);
+            for (int k = 0; k < 7; k++) {
+                double a = Math.PI * (k / 6.0) + Math.sin(t + n) * 0.05;
+                float ex = tx + (float) Math.cos(a) * -9 * s, ey = ty - (float) Math.sin(a) * 3 * s + 4 * s;
+                p.setColor(k % 2 == 0 ? 0xFF3E8A2E : 0xFF56A23A);
+                path.reset();
+                path.moveTo(tx, ty);
+                path.quadTo((tx + ex) / 2, ty - 4 * s, ex, ey);
+                c.drawPath(path, p);
+            }
+            p.setStyle(Paint.Style.FILL);
+            p.setStrokeCap(Paint.Cap.BUTT);
+            p.setColor(0xFF6A4A26);
+            c.drawCircle(tx - 1, ty + 1, 1.1f * s, p);
+            c.drawCircle(tx + 1, ty + 1.4f, 1.1f * s, p);
+            return;
+        }
         if (kind == 1) {
             p.setColor(0xFF5A3B22);
             c.drawRect(x - 1.3f * s, y - 7 * s, x + 1.3f * s, y, p);
@@ -752,6 +882,14 @@ public class Renderer {
                 p.setColor(0xFFB0BEC5);
                 c.drawRect(x - 2.2f * s, y - 1.2f * s, x + 1.8f * s, y - 0.5f * s, p);
                 return;
+        }
+        if (type == World.WARE_BOAT) {
+            c.save();
+            c.translate(x, y);
+            c.scale(s * 0.45f, s * 0.45f);
+            boat(c, 0, -2, 1, 0, 0, false, false, 0);
+            c.restore();
+            return;
         }
         if (type == World.WARE_SWORD) {
             c.save();
@@ -939,6 +1077,92 @@ public class Renderer {
         c.drawRect(x - 1.2f, y - h * 0.7f, x + 1.2f, y - h * 0.55f, p);
         p.setColor(0xFF4A2E1A);
         c.drawRect(x - w * 0.15f, y - h * 0.3f, x + w * 0.15f, y, p);
+    }
+
+    // ---------- Lava und Boote ----------
+
+    private void lavaGlow(Canvas c, float x, float y, float t, int n) {
+        float g = 0.5f + 0.5f * (float) Math.sin(t * 1.7f + n * 1.3f);
+        p.setColor(((int) (70 + 90 * g) << 24) | 0xFFB030);
+        c.drawCircle(x + (h01(n, 50) - 0.5f) * 12, y + (h01(n, 51) - 0.5f) * 6, 2.5f + g * 2.5f, p);
+        if (h01(n, 52) < 0.12f) {
+            // Rauchfähnchen
+            float f = (t * 0.25f + h01(n, 53)) % 1f;
+            p.setColor(((int) (0x60 * (1 - f)) << 24) | 0x5A5048);
+            c.drawCircle(x + f * 5, y - 4 - f * 18, 2 + f * 4, p);
+        }
+    }
+
+    /** Ruderboot; mit Fischer (rudern oder Netz) oder leer am Ufer */
+    void boat(Canvas c, float x, float y, int face, float t, int id, boolean withFisher, boolean net, float ph) {
+        float bob = (float) Math.sin(t * 2.2f + id) * 0.6f;
+        y += bob + 2;
+        // Wellen
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(0.6f);
+        p.setColor(0x70FFFFFF);
+        rf.set(x - 11, y - 1.5f, x + 11, y + 2.5f);
+        c.drawOval(rf, p);
+        p.setStyle(Paint.Style.FILL);
+        c.save();
+        c.translate(x, y);
+        if (face < 0) c.scale(-1, 1);
+        // Rumpf
+        path.reset();
+        path.moveTo(-9, -3);
+        path.lineTo(9.5f, -3.6f);
+        path.quadTo(8, 1.6f, 3, 1.8f);
+        path.lineTo(-6, 1.8f);
+        path.quadTo(-9, 0.6f, -9, -3);
+        path.close();
+        p.setColor(0xFF7A4E2C);
+        c.drawPath(path, p);
+        p.setColor(0xFF5A3820);
+        c.drawRect(-8, -3.2f, 8.5f, -2.2f, p);
+        p.setColor(0xFF9A6A40);
+        c.drawRect(-7.5f, -1.4f, 7, -0.8f, p);
+        p.setColor(0x40000000);
+        c.drawRect(-6, 0.6f, 4, 1.8f, p);
+        if (withFisher) {
+            beginFigure(c, -1, -2, 1, SHIRT[World.J_FISHER], 0xFF5D4037, 0, 0, net ? 18 : 0, 40, true);
+            float a;
+            if (net) {
+                float f = frac(ph / 2.5f);
+                a = f < 0.5f ? 60 + 80 * f * 2 : 140 - 100 * (f - 0.5f) * 2;
+            } else a = 60 + 50 * (float) Math.sin(ph * Math.PI * 2);
+            float[] h = arm(c, a, SHIRT[World.J_FISHER]);
+            endFigure(c);
+            if (net) {
+                // Netz im Wasser
+                float f = frac(ph / 2.5f);
+                p.setStyle(Paint.Style.STROKE);
+                p.setStrokeWidth(0.3f);
+                p.setColor(0xC0D8C8A0);
+                float nx0 = 10, ny0 = -2, nr = 4 + 3 * (float) Math.sin(f * Math.PI);
+                c.drawLine(-1 + h[0], -7 + h[1], nx0, ny0, p);
+                rf.set(nx0 - nr, ny0 - nr * 0.3f, nx0 + nr, ny0 + nr * 0.5f);
+                c.drawOval(rf, p);
+                for (int k = -2; k <= 2; k++) c.drawLine(nx0 + k * nr / 2.5f, ny0 - nr * 0.25f, nx0 + k * nr / 3.5f, ny0 + nr * 0.45f, p);
+                p.setStyle(Paint.Style.FILL);
+            } else {
+                // Ruder
+                float r = (float) Math.toRadians(a);
+                float ox = (float) Math.sin(r) * 4.8f - 1, oy = (float) Math.cos(r) * 4.8f - 7;
+                p.setStyle(Paint.Style.STROKE);
+                p.setStrokeWidth(0.7f);
+                p.setColor(0xFFB08860);
+                c.drawLine(ox - 4, oy - 2, ox + 6, oy + 7, p);
+                p.setStyle(Paint.Style.FILL);
+                p.setColor(0xFFB08860);
+                rf.set(ox + 4.5f, oy + 5.5f, ox + 8, oy + 8.5f);
+                c.drawOval(rf, p);
+            }
+        } else {
+            // liegendes Ruder
+            p.setColor(0xFFB08860);
+            c.drawRect(-6, -2.8f, 6, -2.2f, p);
+        }
+        c.restore();
     }
 
     // ---------- Soldaten ----------
@@ -1601,6 +1825,11 @@ public class Renderer {
 
         if (s.job == World.J_SOLDIER) {
             soldier(c, w, s, x, y, face, legs, walk);
+            return;
+        }
+        if (s.inBoat) {
+            boolean net = s.state == World.S_WORK && !walk;
+            boat(c, x, y, face, t, s.id, true, net, net ? s.workPhase : (walk ? s.prog : 0));
             return;
         }
 

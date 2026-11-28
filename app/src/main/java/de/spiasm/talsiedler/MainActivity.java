@@ -137,17 +137,25 @@ public class MainActivity extends Activity implements Hud.Host, BtLink.Listener 
     }
 
     @Override
-    public void newGame(int ai) {
+    public void newGame(int ai, int mapType, int mapSize) {
         World w;
         if (ai > 0) {
-            w = new World(System.currentTimeMillis(), 2, 4);
+            w = new World(System.currentTimeMillis(), 2, 4, mapType, mapSize);
             w.ai = ai;
-        } else w = new World(System.currentTimeMillis());
+        } else w = new World(System.currentTimeMillis(), 1, 0, mapType, mapSize);
         view.hud.me = 0;
         view.ren.me = 0;
         session.w = w;
         view.setWorld(w);
         save();
+    }
+
+    @Override
+    public void quit() {
+        save();
+        if (link != null) link.close();
+        link = null;
+        finishAndRemoveTask();
     }
 
     @Override
@@ -163,7 +171,7 @@ public class MainActivity extends Activity implements Hud.Host, BtLink.Listener 
         int mins = (int) (w.time / 60);
         String info = new SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.GERMANY).format(new Date())
                 + "  ·  Spielzeit " + (mins / 60) + ":" + String.format(Locale.GERMANY, "%02d", mins % 60) + " h"
-                + "  ·  " + w.countBuildings(World.B_WOOD, true, view.hud.me) + " Holzfäller  ·  Land " + land
+                + "  ·  " + World.MAP_NAMES[w.mapType] + " " + w.mapW + "×" + w.mapH + "  ·  Land " + land
                 + (w.ai > 0 ? "  ·  gegen Computer (" + (w.ai == 1 ? "leicht" : w.ai == 2 ? "mittel" : "schwer") + ")" : w.players > 1 ? "  ·  2 Spieler" : "");
         prefs.edit().putString("slot" + i, info).apply();
     }
@@ -325,7 +333,7 @@ public class MainActivity extends Activity implements Hud.Host, BtLink.Listener 
             World w;
             if (hostMode == 2 || hostMode == 3) {
                 save();
-                w = new World(System.currentTimeMillis(), 2, hostMode);
+                w = new World(System.currentTimeMillis(), 2, hostMode, view.hud.mapType, World.MAP_SIZES[view.hud.mapSize]);
                 w.goalType = hostGoalType;
                 w.goalValue = hostGoalValue;
                 view.hud.me = 0;

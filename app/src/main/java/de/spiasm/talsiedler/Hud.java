@@ -10,7 +10,9 @@ import java.util.ArrayList;
 /** Bedienoberfläche: obere Leiste, Seitenfenster, Tipps, Menü. Wird direkt auf die Karte gezeichnet. */
 public class Hud {
     public interface Host {
-        void newGame(int ai);
+        void newGame(int ai, int mapType, int mapSize);
+
+        void quit();
 
         void save();
 
@@ -87,6 +89,8 @@ public class Hud {
     private boolean menu, help, confirmNew, confirmDemolish;
     private final RectF rf = new RectF();
     private int helpPage;
+    /** gewählter Kartentyp und Größe für neue Spiele */
+    public int mapType = 0, mapSize = 0;
     public boolean intro = true;
     private int win;
     public int fxVol = 7, ambVol = 5;
@@ -589,6 +593,14 @@ public class Hud {
                         if (w.res[m] == b.type - World.B_COAL + 1) left += w.resAmt[m];
                     y = wrap(c, "Noch im Berg: etwa " + left + " " + World.RES_NAMES[b.type - World.B_COAL + 1], x, y, in, 18 * u, dark);
                 }
+                if (b.type == World.B_FISH && b.done) {
+                    int lake = w.hutLake(b);
+                    String bs = lake < 0 ? "Kein Wasser in der Nähe."
+                            : w.boatOn(me, lake, false) != null ? "Boot: liegt im Wasser – er kann auch weiter draußen fischen."
+                            : b.incoming[World.WARE_BOAT] > 0 ? "Boot: ist unterwegs hierher."
+                            : "Boot: noch keins. Wenn das Ufer leer ist, baut das Sägewerk eins (aus 2 Stämmen).";
+                    y = wrap(c, bs, x, y, in, 16 * u, 0xFF5D4037);
+                }
                 if (b.type == World.B_FOREST) y = wrap(c, "Gepflanzte Bäume: " + b.produced, x, y, in, 18 * u, dark);
                 else if (b.type == World.B_SCOUT) y = wrap(c, "Erkundungen: " + b.produced, x, y, in, 18 * u, dark);
                 else if (World.hasUtil(b.type)) y = wrap(c, "Schon hergestellt: " + b.produced, x, y, in, 18 * u, dark);
@@ -822,11 +834,12 @@ public class Hud {
 
     private void menu(Canvas c, int vw, int vh) {
         box(c, rect(0, 0, vw, vh), 0x99000000, 0);
-        float mw = 560 * u, mh = 640 * u;
+        float mw = 560 * u, mh = 710 * u;
         RectF r = rect(vw / 2f - mw / 2, vh / 2f - mh / 2, vw / 2f + mw / 2, vh / 2f + mh / 2);
         box(c, r, 0xFFE9DCC0, 18 * u);
         text(c, "Talsiedler", vw / 2f, r.top + 54 * u, 34 * u, 0xFF3B2A1A, true, Paint.Align.CENTER);
-        text(c, "Stufe 2 – Nahrung, Bergbau, Werkzeug", vw / 2f, r.top + 84 * u, 16 * u, 0xFF6D5A44, false, Paint.Align.CENTER);
+        text(c, World.MAP_NAMES[w.mapType] + " · " + w.mapW + " × " + w.mapH + " Felder" + (w.ai > 0 ? " · gegen Computer" : ""),
+                vw / 2f, r.top + 84 * u, 16 * u, 0xFF6D5A44, false, Paint.Align.CENTER);
         float bx = r.left + 36 * u, bw = (mw - 84 * u) / 2, gap = 12 * u, bh = 58 * u;
         float bx2 = bx + bw + gap;
         float y0 = r.top + 108 * u;
@@ -847,24 +860,58 @@ public class Hud {
         button(c, bx, y0, bw, bh, "Titelbild", 0xFF5D6B3A, true, () -> { intro = true; menu = false; });
         boolean solo = host.role() == 0;
         button(c, bx2, y0, bw, bh, "Neues Spiel", 0xFF8D3A2A, solo, () -> confirmNew = true);
-        if (confirmNew) {
-            float nw2 = bw * 2 + gap, nh = bh * 5 + gap * 5 + 120 * u;
-            RectF nr = rect(bx, r.top + 70 * u, bx + nw2, r.top + 70 * u + nh);
-            box(c, rect(nr.left - 14 * u, nr.top - 10 * u, nr.right + 14 * u, nr.bottom + 10 * u), 0xFFE9DCC0, 16 * u);
-            btns.add(new Btn(rect(nr.left - 14 * u, nr.top - 10 * u, nr.right + 14 * u, nr.bottom + 10 * u), () -> { }, null));
-            text(c, "Neues Spiel – wie möchtest du spielen?", vw / 2f, nr.top + 30 * u, 20 * u, 0xFF3B2A1A, true, Paint.Align.CENTER);
-            float ny = nr.top + 50 * u;
-            button(c, bx, ny, nw2, bh, "Allein aufbauen (ohne Gegner)", 0xFF2E7D32, true, () -> startNew(0));
-            ny += bh + gap + 28 * u;
-            text(c, "Gegen den Computer (Rot):", bx, ny - 10 * u, 17 * u, 0xFF6D5A44, true, Paint.Align.LEFT);
-            float tw3 = (nw2 - 2 * gap) / 3;
-            button(c, bx, ny, tw3, bh, "Leicht", 0xFF8D6E4A, true, () -> startNew(1));
-            button(c, bx + tw3 + gap, ny, tw3, bh, "Mittel", 0xFFB26A00, true, () -> startNew(2));
-            button(c, bx + 2 * (tw3 + gap), ny, tw3, bh, "Schwer", 0xFFB71C1C, true, () -> startNew(3));
-            ny += bh + gap;
-            button(c, bx, ny, nw2, bh, "Abbrechen", 0xFF6D5A44, true, () -> confirmNew = false);
+        y0 += bh + gap;
+        button(c, bx, y0, bw * 2 + gap, bh, "Beenden (speichern und schließen)", 0xFF5D4037, true, () -> {
+            menu = false;
+            host.quit();
+        });
+        if (confirmNew) newGameDialog(c, vw, vh);
+        if (!confirmNew) text(c, "Das Spiel wird automatisch gespeichert.", vw / 2f, r.bottom - 26 * u, 15 * u, 0xFF6D5A44, false, Paint.Align.CENTER);
+    }
+
+    /** Neues Spiel: Kartentyp, Größe, allein oder gegen den Computer */
+    private void newGameDialog(Canvas c, int vw, int vh) {
+        float dw = Math.min(vw - 40 * u, 760 * u), dh = Math.min(vh - 30 * u, 660 * u);
+        RectF r = rect(vw / 2f - dw / 2, vh / 2f - dh / 2, vw / 2f + dw / 2, vh / 2f + dh / 2);
+        box(c, rect(0, 0, vw, vh), 0x88000000, 0);
+        box(c, r, 0xFFE9DCC0, 18 * u);
+        btns.add(new Btn(rect(0, 0, vw, vh), () -> { }, null));
+        int dark = 0xFF3B2A1A;
+        float x = r.left + 30 * u, in = dw - 60 * u, gap = 10 * u, sh = 46 * u, bh = 56 * u;
+        float y = r.top + 44 * u;
+        text(c, "Neues Spiel", vw / 2f, y, 28 * u, dark, true, Paint.Align.CENTER);
+        y += 30 * u;
+        text(c, "Karte:", x, y, 17 * u, 0xFF6D5A44, true, Paint.Align.LEFT);
+        y += 10 * u;
+        int[][] rowsT = {{1, 2, 3, 4}, {5, 6, 0}};
+        for (int[] row : rowsT) {
+            float bw = (in - gap * 3) / 4;
+            for (int k = 0; k < row.length; k++) {
+                final int mt = row[k];
+                button(c, x + k * (bw + gap), y, bw, sh, World.MAP_NAMES[mt], mapType == mt ? 0xFF1565C0 : 0xFFA8957A, true, () -> mapType = mt);
+            }
+            y += sh + gap;
         }
-        text(c, "Das Spiel wird automatisch gespeichert.", vw / 2f, r.bottom - 34 * u, 15 * u, 0xFF6D5A44, false, Paint.Align.CENTER);
+        y = wrap(c, World.MAP_NAMES[mapType] + ": " + World.MAP_INFO[mapType], x, y + 14 * u, in, 16 * u, dark) + 4 * u;
+        text(c, "Größe:", x, y + 8 * u, 17 * u, 0xFF6D5A44, true, Paint.Align.LEFT);
+        y += 18 * u;
+        float bw4 = (in - gap * 3) / 4;
+        for (int k = 0; k < 4; k++) {
+            final int ms = k;
+            button(c, x + k * (bw4 + gap), y, bw4, sh, World.SIZE_NAMES[k] + " " + World.MAP_SIZES[k], mapSize == k ? 0xFF1565C0 : 0xFFA8957A, true,
+                    () -> mapSize = ms);
+        }
+        y += sh + 4 * u;
+        if (mapSize == 3) y = wrap(c, "Riesig ist 12-mal so groß wie Klein – das Tablet braucht etwas länger zum Erzeugen.", x, y + 14 * u, in, 14 * u, 0xFF8D6E4A) - 8 * u;
+        y += 16 * u;
+        button(c, x, y, in, bh, "Allein aufbauen (ohne Gegner)", 0xFF2E7D32, true, () -> startNew(0));
+        y += bh + 30 * u;
+        text(c, "Gegen den Computer (Rot):", x, y - 8 * u, 17 * u, 0xFF6D5A44, true, Paint.Align.LEFT);
+        float tw3 = (in - 2 * gap) / 3;
+        button(c, x, y, tw3, bh, "Leicht", 0xFF8D6E4A, true, () -> startNew(1));
+        button(c, x + tw3 + gap, y, tw3, bh, "Mittel", 0xFFB26A00, true, () -> startNew(2));
+        button(c, x + 2 * (tw3 + gap), y, tw3, bh, "Schwer", 0xFFB71C1C, true, () -> startNew(3));
+        button(c, x, r.bottom - bh - 16 * u, in, bh, "Abbrechen", 0xFF6D5A44, true, () -> confirmNew = false);
     }
 
     private void startNew(int ai) {
@@ -872,8 +919,8 @@ public class Hud {
         menu = false;
         select(-1);
         ren.roadFrom = -1;
-        host.newGame(ai);
-        say(ai == 0 ? "Neues Spiel gestartet." : "Neues Spiel gegen den Computer (Rot). Er sitzt im Osten der Karte – viel Glück!");
+        host.newGame(ai, mapType, World.MAP_SIZES[mapSize]);
+        say((ai == 0 ? "Neues Spiel" : "Neues Spiel gegen den Computer (Rot) – er sitzt im Osten. Viel Glück!") + " Karte: " + World.MAP_NAMES[mapType] + ".");
     }
 
     private int attackTarget = -1, attackN = 0;
@@ -963,6 +1010,7 @@ public class Hud {
             "12. Kampf (gegen den Computer oder im Bluetooth-Kampf): Gegnerisches Wachgebäude antippen → Anzahl wählen → „Angreifen!“. Die Soldaten kämpfen einzeln gegen die Verteidiger. Gewinnen sie, gehört das Gebäude dir – alles vom Gegner auf dem neuen Land brennt ab. Wer das Hauptquartier des anderen erobert, gewinnt.",
             "13. Lagerhaus: zweites Lager, kurze Wege. Späherhütte: der Späher erkundet den Nebel. Bei Baustellen: „Zuerst bauen“.",
             "14. Zu zweit: Menü → „2 Spieler“. Die Tablets einmal in den Android-Einstellungen per Bluetooth koppeln. Einer tippt „Spiel erstellen“, der andere wählt dieses Tablet aus der Liste.",
+            "15. Neues Spiel: Kartentyp (Allgäu, Alpen, Nordsee, Sahara, Dolomiten, Ätna, Zufall) und Größe wählen. Fischer: Ist das Ufer leer, baut das Sägewerk ein Boot – damit rudert er hinaus und bringt 2 Fische. Das Boot bleibt in seinem See.",
             "Bedienen: Mit einem Finger schieben, mit zwei Fingern zoomen. „Bauplätze“ zeigt, wo was hinpasst: gelb = klein, orange = groß. „Auslastung“ zeigt, wie fleißig jedes Haus ist. Oben auf die Waren tippen öffnet das Lager. Die kleine Karte unten links bringt dich mit einem Tipp überall hin.",
     };
 
@@ -1119,7 +1167,7 @@ public class Hud {
         }
         float x = r.left + 26 * u, y = r.top + 78 * u, in = r.width() - 52 * u;
         String[] groups = {"Baustoffe", "Nahrung", "Bergbau & Metall", "Werkzeug", "Waffen"};
-        int[][] gw = {{0, 1, 2}, {3, 4, 5, 6, 7, 8, 9}, {10, 11, 12, 13}, {14, 15, 16, 17, 18, 19, 20, 21, 22, 23}, {24, 25}};
+        int[][] gw = {{0, 1, 2, 26}, {3, 4, 5, 6, 7, 8, 9}, {10, 11, 12, 13}, {14, 15, 16, 17, 18, 19, 20, 21, 22, 23}, {24, 25}};
         float cw = in / 10f, ch = 74 * u;
         float gx = x;
         // erste Zeile: Baustoffe + Bergbau, zweite: Nahrung, dritte: Werkzeug
